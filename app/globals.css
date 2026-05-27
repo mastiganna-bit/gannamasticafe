@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --cream: #FAF7F2;
+    --parchment: #F0EAE0;
+    --linen: #E8E0D5;
+    --sage: #3D6B4F;
+    --sage-light: #7A9E7E;
+    --cocoa: #4A3728;
+    --amber: #C17B2F;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--cream);
+    color: var(--cocoa);
+    @apply font-sans tracking-wide leading-relaxed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-cormorant), Georgia, serif;
+    @apply text-cocoa leading-tight tracking-tight font-medium;
+  }
+
+  /* Hide scrollbar but keep scroll functionality */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--cream);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--linen);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--sage-light);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-sage text-cream-100 font-sans font-medium text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl transition-all duration-200
+    hover:bg-sage-dark hover:-translate-y-0.5 hover:shadow-card-hover
+    active:scale-95 focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2;
+  }
+
+  .btn-outline {
+    @apply border border-sage text-sage font-sans font-medium text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl transition-all duration-200
+    hover:bg-sage hover:text-cream-100 hover:-translate-y-0.5
+    active:scale-95 focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2;
+  }
+
+  .card {
+    @apply bg-white border border-linen rounded-xl2 shadow-card transition-all duration-300
+    hover:-translate-y-1.5 hover:shadow-card-hover transform-gpu;
+    will-change: transform, box-shadow;
+  }
+
+  .section-heading {
+    @apply font-serif text-3xl sm:text-4xl md:text-5xl lg:text-[2.8rem] font-light text-cocoa tracking-tight leading-[1.15];
+  }
+
+  .premium-label {
+    @apply font-sans text-[10px] sm:text-xs text-sage font-semibold uppercase tracking-[0.2em] mb-2 block;
+  }
+
+  .price-tag {
+    @apply font-sans font-semibold text-amber-cafe text-lg;
+  }
+
+  .input-field {
+    @apply w-full border border-linen bg-cream-100 rounded-xl px-4 py-3 font-sans text-sm text-cocoa
+    placeholder:text-cocoa-muted focus:outline-none focus:ring-2 focus:ring-sage focus:border-transparent
+    transition-all duration-200;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .stagger-children > * {
+    animation-fill-mode: both;
+  }
+
+  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 80ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 160ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 320ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 400ms; }
+
+  /* Premium glassmorphism effects */
+  .glass-panel {
+    @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-card;
+  }
+
+  .glass-panel-dark {
+    @apply bg-cocoa/90 backdrop-blur-md border border-white/10 shadow-modal;
+  }
+
+  /* Elegant scrollbar hider for mobile category swiping */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Overlay scroll lock */
+  .no-scroll {
+    overflow: hidden !important;
+    position: relative;
+  }
+}
