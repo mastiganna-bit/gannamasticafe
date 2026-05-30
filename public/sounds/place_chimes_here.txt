@@ -1,0 +1,15 @@
+🔔 Gannamasti Cafe — Audio Chime Assets Folder
+==============================================
+
+To unlock the premium live audio alerts, please drop two light MP3 sound effects into this exact directory:
+
+1. "new-order.mp3"
+   - Ring: Audible ding/bell chime for the kitchen staff.
+   - Triggers: On the Admin Dashboard when a customer places a new paid order online.
+
+2. "cafe-chime.mp3"
+   - Ring: Soft cafe counter chime.
+   - Triggers: On the Customer Account / Order Tracking Page the second their order is marked ready!
+
+----------------------------------------------
+Note: The application code will automatically load these files from "/sounds/new-order.mp3" and "/sounds/cafe-chime.mp3".

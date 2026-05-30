@@ -1,0 +1,22 @@
+{
+  "name": "Gannamasti Cafe",
+  "short_name": "Gannamasti Cafe",
+  "description": "Ganna Masti Cafe — Real Taste. Real Health. Zero Compromise.",
+  "start_url": "/account",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FCFAF7",
+  "theme_color": "#4A6B53",
+  "icons": [
+    {
+      "src": "/images/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
