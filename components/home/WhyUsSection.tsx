@@ -6,23 +6,23 @@ import { Leaf, Clock, ShieldCheck, Sparkles } from 'lucide-react'
 const features = [
   {
     icon: Leaf,
-    title: '100% Natural',
-    description: 'No preservatives, no artificial colours. Just pure sugarcane.',
+    title: 'Fresh Everyday',
+    description: 'No factory-made food. We serve fresh, wholesome goodness prepared everyday.',
   },
   {
     icon: ShieldCheck,
-    title: 'Zero Touch, Zero Ice',
-    description: 'Hygienically pressed and served immediately, never diluted.',
-  },
-  {
-    icon: Clock,
-    title: 'Ready in Minutes',
-    description: 'Order online, come and collect. No waiting, no fuss.',
+    title: 'Oil-Free Burgers',
+    description: 'Why eat food drenched in oil? Enjoy delicious, fresh, and lighter veggie burgers.',
   },
   {
     icon: Sparkles,
-    title: 'Premium Menu',
-    description: 'Burgers, Pizzas, Milkshakes crafted with care.',
+    title: 'Pure Milkshakes',
+    description: 'Goodbye heavy cream, chemicals, and ice. Hello fresh and purely natural thick shakes!',
+  },
+  {
+    icon: Clock,
+    title: 'Zero Compromise',
+    description: 'Zero artificial preservatives or colors. Where fast food becomes truly healthy and fresh.',
   },
 ]
 
@@ -37,7 +37,7 @@ export default function WhyUsSection() {
           className="text-center mb-12"
         >
           <span className="premium-label">
-            Why Gannamasti
+            Why Gannamasti Cafe
           </span>
           <h2 className="section-heading">We Keep It Real</h2>
         </motion.div>

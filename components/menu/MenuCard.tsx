@@ -5,16 +5,22 @@ import Image from 'next/image'
 import { Plus, ChevronDown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuItem, MenuItemSize } from '@/lib/types'
-import { formatPrice } from '@/lib/utils'
+import { formatPrice, isExtraCheeseEligible, getExtraCheesePrice, cn } from '@/lib/utils'
 import { useCart } from '@/components/cart/CartProvider'
-import { cn } from '@/lib/utils'
 
 export default function MenuCard({ item }: { item: MenuItem }) {
   const { addItem } = useCart()
-  const [selectedSize, setSelectedSize] = useState<MenuItemSize>(
-    item.menu_item_sizes[0]
-  )
+  const [selectedSize, setSelectedSize] = useState<MenuItemSize>(() => {
+    if (item.category === 'The Cane Bar') {
+      const medium = item.menu_item_sizes.find(
+        (size) => size.size_label.toLowerCase().trim() === 'medium'
+      )
+      if (medium) return medium
+    }
+    return item.menu_item_sizes[0]
+  })
   const [isExpanded, setIsExpanded] = useState(false)
+  const [extraCheese, setExtraCheese] = useState(false)
 
   const hasSizes = item.has_sizes && item.menu_item_sizes.length > 1
 
@@ -31,6 +37,9 @@ export default function MenuCard({ item }: { item: MenuItem }) {
     else if (size === 'jumbo') displayImagePath = '/images/cane/ganna-jumbo.jpg'
   }
 
+  const eligibleForExtraCheese = isExtraCheeseEligible(item.category)
+  const extraCheesePrice = getExtraCheesePrice(item.category, selectedSize.size_label)
+
   const handleAdd = () => {
     addItem({
       menu_item_id: item.id,
@@ -40,7 +49,11 @@ export default function MenuCard({ item }: { item: MenuItem }) {
       price_paise: selectedSize.price_paise,
       quantity: 1,
       image_path: displayImagePath,
+      extra_cheese: extraCheese,
+      category: item.category,
     })
+    // Reset option after adding to cart for fresh selections
+    setExtraCheese(false)
   }
 
   // Since Gannamasti Cafe is a 100% pure vegetarian establishment, all items are veg.
@@ -111,7 +124,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
 
         {/* Size Selector or Single Price container aligned perfectly at the bottom */}
         {hasSizes ? (
-          <div className="mb-3.5 mt-auto relative">
+          <div className="mb-3 mt-auto relative">
             <button
               onClick={() => setIsExpanded(!isExpanded)}
               className={cn(
@@ -122,7 +135,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
               )}
             >
               <span className="text-cocoa-muted truncate mr-1 font-medium">
-                {selectedSize.size_label} — <span className="text-amber-cafe font-semibold">{formatPrice(selectedSize.price_paise)}</span>
+                {selectedSize.size_label} — <span className="text-amber-cafe font-semibold">{formatPrice(selectedSize.price_paise + (extraCheese ? extraCheesePrice : 0))}</span>
               </span>
               <ChevronDown
                 size={12}
@@ -155,7 +168,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
                         {size.size_label}
                       </span>
                       <span className={selectedSize.id === size.id ? 'text-sage font-bold shrink-0' : 'text-amber-cafe font-semibold shrink-0'}>
-                        {formatPrice(size.price_paise)}
+                        {formatPrice(size.price_paise + (extraCheese ? getExtraCheesePrice(item.category, size.size_label) : 0))}
                       </span>
                     </button>
                   ))}
@@ -164,10 +177,30 @@ export default function MenuCard({ item }: { item: MenuItem }) {
             </AnimatePresence>
           </div>
         ) : (
-          <div className="mb-3.5 mt-auto flex items-end justify-between pt-2 border-t border-linen/30">
+          <div className="mb-3 mt-auto flex items-end justify-between pt-2 border-t border-linen/30">
             <span className="font-sans text-[9px] xs:text-[10px] text-cocoa-muted uppercase tracking-widest font-medium">Price</span>
             <span className="font-sans font-bold text-amber-cafe text-xs xs:text-sm">
-              {formatPrice(selectedSize.price_paise)}
+              {formatPrice(selectedSize.price_paise + (extraCheese ? extraCheesePrice : 0))}
+            </span>
+          </div>
+        )}
+
+        {/* Extra Cheese Premium Toggle Option */}
+        {eligibleForExtraCheese && item.is_available && (
+          <div className="mb-3.5 flex items-center justify-between p-2 rounded-xl bg-cream-100/30 border border-linen/40 transition-colors hover:bg-cream-100/60 select-none">
+            <label className="flex items-center gap-2 cursor-pointer flex-1 py-0.5">
+              <input
+                type="checkbox"
+                checked={extraCheese}
+                onChange={(e) => setExtraCheese(e.target.checked)}
+                className="w-4 h-4 rounded border-linen text-sage focus:ring-sage focus:ring-offset-0 cursor-pointer accent-sage"
+              />
+              <span className="font-sans text-[10px] xs:text-xs text-cocoa-muted flex items-center gap-1 font-medium">
+                <span className="text-cocoa font-semibold">Extra Cheese</span>
+              </span>
+            </label>
+            <span className="font-sans text-[9px] xs:text-[10px] text-sage font-semibold bg-sage/5 px-2 py-0.5 rounded-full border border-sage/10 shrink-0">
+              +{formatPrice(extraCheesePrice)}
             </span>
           </div>
         )}

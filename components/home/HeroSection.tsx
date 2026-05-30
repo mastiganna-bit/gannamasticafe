@@ -44,9 +44,9 @@ export default function HeroSection() {
               transition={{ delay: 0.2, duration: 0.6 }}
               className="font-serif text-4xl xs:text-5xl md:text-6xl lg:text-7xl text-cocoa leading-[1.1] font-light"
             >
-              Fresh Sugarcane
+              Real Taste.
               <br />
-              <span className="text-sage font-medium">Juice</span>
+              <span className="text-sage font-medium">Real Health.</span>
             </motion.h1>
 
             <motion.p
@@ -55,9 +55,7 @@ export default function HeroSection() {
               transition={{ delay: 0.3, duration: 0.5 }}
               className="font-sans text-sm xs:text-base text-cocoa-muted max-w-sm leading-relaxed"
             >
-              Pressed fresh. Served right. Every time.
-              <br />
-              Burgers, Pizzas, Milkshakes & more.
+              Where fast food becomes healthy and fresh. Ditch the factory-made chemicals—enjoy fresh, everyday goodness!
             </motion.p>
 
             <motion.div
@@ -91,26 +89,15 @@ export default function HeroSection() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2, duration: 0.7, ease: [0.25, 0.1, 0.25, 1] }}
-            className="relative h-[260px] xs:h-[350px] md:h-[500px] lg:h-[550px] rounded-2xl overflow-hidden w-full shadow-card"
+            className="relative w-full aspect-[4/3] md:h-[480px] lg:h-[520px] rounded-2xl overflow-hidden shadow-card"
           >
             <img
               src="/images/hero-juice.jpg"
-              alt="Fresh Ganna Juice at Gannamasti Cafe"
-              className="w-full h-full object-cover"
+              alt="Real Taste and Real Health at Gannamasti Cafe"
+              className="w-full h-full object-cover object-center"
             />
             {/* Warm overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-cocoa/30 via-cocoa/5 to-transparent" />
-
-            {/* Floating badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7 }}
-              className="absolute bottom-3 left-3 xs:bottom-5 xs:left-5 bg-cream/95 backdrop-blur-sm rounded-xl p-2.5 xs:p-3 shadow-card border border-linen"
-            >
-              <p className="font-display text-[9px] xs:text-xs text-sage uppercase tracking-wide">Starting at</p>
-              <p className="font-serif text-lg xs:text-2xl text-cocoa font-light">₹20 <span className="font-sans text-[10px] xs:text-xs text-cocoa-muted">onwards</span></p>
-            </motion.div>
           </motion.div>
         </div>
       </div>

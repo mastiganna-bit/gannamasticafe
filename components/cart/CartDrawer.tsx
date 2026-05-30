@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { X, Plus, Minus, ShoppingBag, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCart } from './CartProvider'
-import { formatPrice } from '@/lib/utils'
+import { formatPrice, getExtraCheesePrice } from '@/lib/utils'
 
 export default function CartDrawer() {
   const { items, isCartOpen, setIsCartOpen, updateQuantity, totalPaise, totalItems } =
@@ -79,55 +79,67 @@ export default function CartDrawer() {
                   </button>
                 </div>
               ) : (
-                items.map((item) => (
-                  <motion.div
-                    key={item.size_id}
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="flex gap-3 items-center"
-                  >
-                    <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-cream-200 relative">
-                      <Image
-                        src={item.image_path}
-                        alt={item.name}
-                        fill
-                        className="object-cover w-full h-full"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-sans text-sm font-medium text-cocoa truncate">
-                        {item.name}
-                      </p>
-                      <p className="font-sans text-xs text-cocoa-muted">{item.size_label}</p>
-                      <p className="price-tag text-sm mt-0.5">{formatPrice(item.price_paise)}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => updateQuantity(item.size_id, item.quantity - 1)}
-                        className="w-8 h-8 rounded-lg border border-linen flex items-center justify-center hover:bg-cream-200 active:scale-90 transition-all"
-                        aria-label="Decrease quantity"
-                      >
-                        {item.quantity === 1 ? (
-                          <Trash2 size={12} className="text-cocoa-muted" />
-                        ) : (
-                          <Minus size={12} className="text-cocoa" />
-                        )}
-                      </button>
-                      <span className="font-sans text-sm font-medium text-cocoa w-5 text-center">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateQuantity(item.size_id, item.quantity + 1)}
-                        className="w-8 h-8 rounded-lg bg-sage text-cream flex items-center justify-center hover:bg-sage-dark active:scale-90 transition-all"
-                        aria-label="Increase quantity"
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))
+                items.map((item) => {
+                  const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                  return (
+                    <motion.div
+                      key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="flex gap-3 items-center"
+                    >
+                      <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-cream-200 relative">
+                        <Image
+                          src={item.image_path}
+                          alt={item.name}
+                          fill
+                          className="object-cover w-full h-full"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-sans text-sm font-semibold text-cocoa truncate leading-tight">
+                          {item.name}
+                        </p>
+                        <div className="font-sans text-[11px] text-cocoa-muted flex flex-col mt-0.5 leading-normal">
+                          <span>Size: {item.size_label}</span>
+                          {item.extra_cheese && (
+                            <span className="text-[10px] text-sage font-semibold mt-0.5 flex items-center gap-0.5">
+                              + Extra Cheese (+{formatPrice(extraPrice)})
+                            </span>
+                          )}
+                        </div>
+                        <p className="price-tag text-xs xs:text-sm font-bold mt-1 text-amber-cafe">
+                          {formatPrice(item.price_paise + extraPrice)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => updateQuantity(item.size_id, item.quantity - 1, item.extra_cheese)}
+                          className="w-8 h-8 rounded-lg border border-linen flex items-center justify-center hover:bg-cream-200 active:scale-90 transition-all cursor-pointer"
+                          aria-label="Decrease quantity"
+                        >
+                          {item.quantity === 1 ? (
+                            <Trash2 size={12} className="text-cocoa-muted hover:text-red-500" />
+                          ) : (
+                            <Minus size={12} className="text-cocoa" />
+                          )}
+                        </button>
+                        <span className="font-sans text-sm font-medium text-cocoa w-5 text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => updateQuantity(item.size_id, item.quantity + 1, item.extra_cheese)}
+                          className="w-8 h-8 rounded-lg bg-sage text-cream flex items-center justify-center hover:bg-sage-dark active:scale-90 transition-all cursor-pointer"
+                          aria-label="Increase quantity"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )
+                })
               )}
             </div>
 
@@ -147,6 +159,12 @@ export default function CartDrawer() {
                 >
                   Proceed to Checkout
                 </Link>
+                <button
+                  onClick={() => setIsCartOpen(false)}
+                  className="w-full text-center font-sans text-sm text-sage hover:text-sage-dark font-medium transition-colors pt-1 block cursor-pointer"
+                >
+                  ← Continue Shopping
+                </button>
                 <p className="font-sans text-xs text-cocoa-muted text-center">
                   Secure payment via Razorpay
                 </p>

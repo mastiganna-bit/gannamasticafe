@@ -26,6 +26,8 @@ export type CartItem = {
   price_paise: number
   quantity: number
   image_path: string
+  extra_cheese?: boolean
+  category?: string
 }
 
 export type OrderStatus = 'pending' | 'paid' | 'preparing' | 'completed' | 'cancelled'

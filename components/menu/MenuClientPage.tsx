@@ -17,10 +17,50 @@ export default function MenuClientPage({
   const [activeCategory, setActiveCategory] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Custom visual ordering for specific categories
+  const categoryItemOrders: Record<string, string[]> = {
+    'Refresher & Hot Brews': [
+      'Lemon Masala Soda',
+      'Lemonade',
+      'Green Mint Mojito',
+      'Watermelon Mojito',
+      'Blue Lagoon Mojito',
+      'Cold Coffee',
+      'Hot Coffee',
+    ]
+  }
+
+  // Sort dynamically in the client with a fully transitive, robust comparator
+  const sortedItems = [...items].sort((a, b) => {
+    // 1. First, group by category order as defined in the categories list
+    const catIndexA = categories.indexOf(a.category)
+    const catIndexB = categories.indexOf(b.category)
+
+    if (catIndexA !== catIndexB) {
+      return catIndexA - catIndexB
+    }
+
+    // 2. If they are in the same category, apply the custom visual order list
+    if (categoryItemOrders[a.category]) {
+      const order = categoryItemOrders[a.category]
+      const indexA = order.indexOf(a.name)
+      const indexB = order.indexOf(b.name)
+
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB
+      }
+      if (indexA !== -1) return -1
+      if (indexB !== -1) return 1
+    }
+
+    // 3. Fallback to stable creation date sorting
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  })
+
   const allCategories = ['All', ...categories]
 
   // Smart search filter that honors both active categories and search queries
-  const filtered = items.filter((item) => {
+  const filtered = sortedItems.filter((item) => {
     const matchesCategory = activeCategory === 'All' || item.category === activeCategory
     const matchesSearch =
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -125,12 +165,17 @@ export default function MenuClientPage({
         ) : activeCategory === 'All' ? (
           // Show grouped by category (Standard Menu layout)
           categories.map((category) => {
-            const catItems = items.filter((i) => i.category === category)
+            const catItems = sortedItems.filter((i) => i.category === category)
             if (catItems.length === 0) return null
             return (
               <div key={category} className="mb-10 md:mb-12">
                 <div className="flex items-center gap-4 mb-4 md:mb-6">
                   <h2 className="font-display text-xl md:text-2xl text-cocoa">{category}</h2>
+                  {category === 'Cheesy Sides & Bread Pizza' && (
+                    <span className="bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-2.5 py-1 rounded-full border border-emerald-200/40 flex items-center gap-1 shrink-0 shadow-3xs">
+                      🌿 No Mayonnaise Used
+                    </span>
+                  )}
                   <div className="flex-1 h-px bg-linen" />
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

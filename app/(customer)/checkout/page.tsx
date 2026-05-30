@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useCart } from '@/components/cart/CartProvider'
-import { formatPrice, cn } from '@/lib/utils'
+import { formatPrice, cn, getExtraCheesePrice } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
@@ -90,7 +90,7 @@ export default function CheckoutPage() {
 
           if (verifyData.success) {
             clearCart()
-            toast.success('Order placed successfully! 🎉')
+            toast.success('Order placed successfully!')
             router.push(`/order-success?order_id=${orderData.order_db_id}`)
           } else {
             toast.error('Payment verification failed. Please contact us.')
@@ -178,25 +178,36 @@ export default function CheckoutPage() {
                   className="px-4 pb-4 pt-1 border-t border-linen space-y-3 bg-cream-100"
                 >
                   <div className="space-y-3 mt-2">
-                    {items.map((item) => (
-                      <div key={item.size_id} className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
-                          <Image
-                            src={item.image_path}
-                            alt={item.name}
-                            fill
-                            className="object-cover"
-                          />
+                    {items.map((item) => {
+                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                      const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
+                      return (
+                        <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
+                            <Image
+                              src={item.image_path}
+                              alt={item.name}
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-sans text-xs font-medium text-cocoa truncate">{item.name}</p>
+                            <div className="font-sans text-[10px] text-cocoa-muted flex flex-col leading-tight">
+                              <span>Size: {item.size_label} · Qty: {item.quantity}</span>
+                              {item.extra_cheese && (
+                                <span className="text-[9px] text-sage font-semibold mt-0.5">
+                                  + Extra Cheese (+{formatPrice(extraPrice)})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
+                            {formatPrice(itemTotalPrice)}
+                          </p>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-sans text-xs font-medium text-cocoa truncate">{item.name}</p>
-                          <p className="font-sans text-[10px] text-cocoa-muted">{item.size_label} × {item.quantity}</p>
-                        </div>
-                        <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
-                          {formatPrice(item.price_paise * item.quantity)}
-                        </p>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </motion.div>
               )}
@@ -297,25 +308,36 @@ export default function CheckoutPage() {
               <div className="bg-cream-200 rounded-xl2 border border-linen p-5 sticky top-24 shadow-sm">
                 <h2 className="font-display text-lg text-cocoa mb-4">Order Summary</h2>
                 <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto pr-1">
-                  {items.map((item) => (
-                    <div key={item.size_id} className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
-                        <Image
-                          src={item.image_path}
-                          alt={item.name}
-                          fill
-                          className="object-cover w-full h-full"
-                        />
+                  {items.map((item) => {
+                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                    const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
+                    return (
+                      <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
+                          <Image
+                            src={item.image_path}
+                            alt={item.name}
+                            fill
+                            className="object-cover w-full h-full"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-sans text-xs font-semibold text-cocoa truncate">{item.name}</p>
+                          <div className="font-sans text-[10px] text-cocoa-muted flex flex-col leading-tight">
+                            <span>Size: {item.size_label} · Qty: {item.quantity}</span>
+                            {item.extra_cheese && (
+                              <span className="text-[9px] text-sage font-semibold mt-0.5">
+                                + Extra Cheese (+{formatPrice(extraPrice)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
+                          {formatPrice(itemTotalPrice)}
+                        </p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-sans text-xs font-semibold text-cocoa truncate">{item.name}</p>
-                        <p className="font-sans text-[10px] text-cocoa-muted">{item.size_label} × {item.quantity}</p>
-                      </div>
-                      <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
-                        {formatPrice(item.price_paise * item.quantity)}
-                      </p>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div className="border-t border-linen pt-3">
                   <div className="flex justify-between items-center">

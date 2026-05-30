@@ -216,18 +216,16 @@ insert into public.menu_items (id, name, description, category, image_path, has_
 ('11111111-1111-1111-1111-111111111013', 'Blue Lagoon Mojito', 'Tropical blue lagoon mojito', 'Refresher & Hot Brews', '/images/beverages/blue-lagoon-mojito.jpg', false),
 ('11111111-1111-1111-1111-111111111014', 'Cold Coffee', 'Chilled and creamy cold coffee', 'Refresher & Hot Brews', '/images/beverages/cold-coffee.jpg', false),
 ('11111111-1111-1111-1111-111111111015', 'Hot Coffee', 'Freshly brewed hot coffee', 'Refresher & Hot Brews', '/images/beverages/hot-coffee.jpg', false),
-('11111111-1111-1111-1111-111111111016', 'Classic Chai', 'Traditional Indian chai', 'Refresher & Hot Brews', '/images/beverages/classic-chai.jpg', false),
-('11111111-1111-1111-1111-111111111017', 'Masala Chai', 'Spiced masala chai', 'Refresher & Hot Brews', '/images/beverages/masala-chai.jpg', false);
+('11111111-1111-1111-1111-111111111018', 'Lemonade', 'Classic, refreshing sweet and sour lemonade', 'Refresher & Hot Brews', '/images/beverages/lemonade.jpg', false);
 
 insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_order) values
 ('11111111-1111-1111-1111-111111111010', 'Regular', 3000, 1),
 ('11111111-1111-1111-1111-111111111011', 'Regular', 6000, 1),
-('11111111-1111-1111-1111-111111111012', 'Regular', 6000, 1),
+('11111111-1111-1111-1111-111111111012', 'Regular', 7000, 1),
 ('11111111-1111-1111-1111-111111111013', 'Regular', 6000, 1),
 ('11111111-1111-1111-1111-111111111014', 'Regular', 7000, 1),
 ('11111111-1111-1111-1111-111111111015', 'Regular', 3000, 1),
-('11111111-1111-1111-1111-111111111016', 'Regular', 2000, 1),
-('11111111-1111-1111-1111-111111111017', 'Regular', 3000, 1);
+('11111111-1111-1111-1111-111111111018', 'Regular', 4000, 1);
 
 -- BURGERS
 insert into public.menu_items (id, name, description, category, image_path, has_sizes) values
@@ -240,8 +238,8 @@ insert into public.menu_items (id, name, description, category, image_path, has_
 
 insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_order) values
 ('11111111-1111-1111-1111-111111111020', 'Regular', 4500, 1),
-('11111111-1111-1111-1111-111111111021', 'Regular', 6000, 1),
-('11111111-1111-1111-1111-111111111022', 'Regular', 6000, 1),
+('11111111-1111-1111-1111-111111111021', 'Regular', 7000, 1),
+('11111111-1111-1111-1111-111111111022', 'Regular', 6500, 1),
 ('11111111-1111-1111-1111-111111111023', 'Regular', 8000, 1),
 ('11111111-1111-1111-1111-111111111024', 'Regular', 7000, 1),
 ('11111111-1111-1111-1111-111111111025', 'Regular', 10000, 1);
@@ -255,9 +253,9 @@ insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_
 
 -- PIZZA (Premium Loaded)
 insert into public.menu_items (id, name, description, category, image_path, has_sizes) values
-('11111111-1111-1111-1111-111111111040', 'Mix Veggie', 'Fresh dough, premium toppings & melty cheese', 'Premium Loaded Pizza', '/images/pizza/mix-veggie-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111041', 'Mix Veggie with Sweet Corn', 'Mix vegetables topped with sweet corn', 'Premium Loaded Pizza', '/images/pizza/mix-veggie-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111042', 'Mix Veggie Paneer', 'Mix vegetables with paneer topping', 'Premium Loaded Pizza', '/images/pizza/paneer-veggie-pizza.jpg', false),
+('11111111-1111-1111-1111-111111111040', 'Mix Veggie', 'Fresh dough, premium toppings & melty cheese', 'Grill & Thrill Sandwiches', '/images/sandwiches/mix-veggie-sandwich.jpg', true),
+('11111111-1111-1111-1111-111111111041', 'Mix Veggie with Sweet Corn', 'Mix vegetables topped with sweet corn', 'Grill & Thrill Sandwiches', '/images/sandwiches/mix-veggie-sweetcorn-sandwich.jpg', true),
+('11111111-1111-1111-1111-111111111042', 'Mix Veggie Paneer', 'Mix vegetables with paneer topping', 'Grill & Thrill Sandwiches', '/images/sandwiches/paneer-veggie-sandwich.jpg', false),
 ('11111111-1111-1111-1111-111111111043', 'Mix Veggie Pizza', 'Classic mix veggie pizza', 'Premium Loaded Pizza', '/images/pizza/mix-veggie-pizza.jpg', true),
 ('11111111-1111-1111-1111-111111111044', 'Paneer Veggie', 'Cottage cheese with veggies', 'Premium Loaded Pizza', '/images/pizza/paneer-veggie-pizza.jpg', true),
 ('11111111-1111-1111-1111-111111111045', 'Tandoori Paneer', 'Tandoori spiced paneer pizza', 'Premium Loaded Pizza', '/images/pizza/tandoori-paneer-pizza.jpg', true),
@@ -267,36 +265,36 @@ insert into public.menu_items (id, name, description, category, image_path, has_
 ('11111111-1111-1111-1111-111111111049', 'Gannamasti Spl. Pizza', 'Our ultimate special pizza', 'Premium Loaded Pizza', '/images/pizza/gannamasti-spl-pizza.jpg', false);
 
 insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_order) values
-('11111111-1111-1111-1111-111111111040', 'Half', 5000, 1),
-('11111111-1111-1111-1111-111111111040', 'Full', 8000, 2),
-('11111111-1111-1111-1111-111111111041', 'Half', 6000, 1),
-('11111111-1111-1111-1111-111111111041', 'Full', 9000, 2),
+('11111111-1111-1111-1111-111111111040', 'Small', 5000, 1),
+('11111111-1111-1111-1111-111111111040', 'Medium', 8000, 2),
+('11111111-1111-1111-1111-111111111041', 'Small', 6000, 1),
+('11111111-1111-1111-1111-111111111041', 'Medium', 9000, 2),
 ('11111111-1111-1111-1111-111111111042', 'Regular', 12000, 1),
-('11111111-1111-1111-1111-111111111043', 'Half', 8000, 1),
-('11111111-1111-1111-1111-111111111043', 'Full', 12000, 2),
-('11111111-1111-1111-1111-111111111044', 'Half', 10000, 1),
-('11111111-1111-1111-1111-111111111044', 'Full', 15000, 2),
-('11111111-1111-1111-1111-111111111045', 'Half', 12000, 1),
-('11111111-1111-1111-1111-111111111045', 'Full', 18000, 2),
-('11111111-1111-1111-1111-111111111046', 'Half', 12000, 1),
-('11111111-1111-1111-1111-111111111046', 'Full', 18000, 2),
+('11111111-1111-1111-1111-111111111043', 'Small', 8000, 1),
+('11111111-1111-1111-1111-111111111043', 'Medium', 12000, 2),
+('11111111-1111-1111-1111-111111111044', 'Small', 10000, 1),
+('11111111-1111-1111-1111-111111111044', 'Medium', 15000, 2),
+('11111111-1111-1111-1111-111111111045', 'Small', 12000, 1),
+('11111111-1111-1111-1111-111111111045', 'Medium', 18000, 2),
+('11111111-1111-1111-1111-111111111046', 'Small', 12000, 1),
+('11111111-1111-1111-1111-111111111046', 'Medium', 18000, 2),
 ('11111111-1111-1111-1111-111111111047', 'Regular', 24000, 1),
-('11111111-1111-1111-1111-111111111048', 'Half', 10000, 1),
-('11111111-1111-1111-1111-111111111048', 'Full', 15000, 2),
+('11111111-1111-1111-1111-111111111048', 'Small', 10000, 1),
+('11111111-1111-1111-1111-111111111048', 'Medium', 15000, 2),
 ('11111111-1111-1111-1111-111111111049', 'Regular', 30000, 1);
 
 -- PIZZAS (Regular Veg)
 insert into public.menu_items (id, name, description, category, image_path, has_sizes) values
-('11111111-1111-1111-1111-111111111050', 'Onion Pizza', 'Classic onion topped pizza', 'Pizzas', '/images/pizza/onion-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111051', 'Tomato Pizza', 'Fresh tomato pizza', 'Pizzas', '/images/pizza/tomato-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111052', 'Capsicum Pizza', 'Crunchy capsicum pizza', 'Pizzas', '/images/pizza/capsicum-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111053', 'Sweet Corn Pizza', 'Sweet corn topped pizza', 'Pizzas', '/images/pizza/sweet-corn-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111054', 'Paneer Pizza', 'Paneer loaded pizza', 'Pizzas', '/images/pizza/paneer-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111055', 'Onion & Sweet Corn Pizza', 'Onion and sweet corn combo', 'Pizzas', '/images/pizza/onion-sweetcorn-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111056', 'Onion & Capsicum Pizza', 'Onion and capsicum combo', 'Pizzas', '/images/pizza/onion-capsicum-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111057', 'Onion & Tomato Pizza', 'Onion and tomato combo', 'Pizzas', '/images/pizza/onion-tomato-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111058', 'Tomato & Sweet Corn Pizza', 'Tomato and sweet corn combo', 'Pizzas', '/images/pizza/tomato-sweetcorn-pizza.jpg', true),
-('11111111-1111-1111-1111-111111111059', 'Capsicum & Sweet Corn Pizza', 'Capsicum and sweet corn combo', 'Pizzas', '/images/pizza/capsicum-sweetcorn-pizza.jpg', true);
+('11111111-1111-1111-1111-111111111050', 'Onion Pizza', 'Classic onion topped pizza', 'Single Topping Pizza', '/images/pizza/onion-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111051', 'Tomato Pizza', 'Fresh tomato pizza', 'Single Topping Pizza', '/images/pizza/tomato-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111052', 'Capsicum Pizza', 'Crunchy capsicum pizza', 'Single Topping Pizza', '/images/pizza/capsicum-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111053', 'Sweet Corn Pizza', 'Sweet corn topped pizza', 'Single Topping Pizza', '/images/pizza/sweet-corn-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111054', 'Paneer Pizza', 'Paneer loaded pizza', 'Single Topping Pizza', '/images/pizza/paneer-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111055', 'Onion & Sweet Corn Pizza', 'Onion and sweet corn combo', 'Double Topping Pizza', '/images/pizza/onion-sweetcorn-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111056', 'Onion & Capsicum Pizza', 'Onion and capsicum combo', 'Double Topping Pizza', '/images/pizza/onion-capsicum-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111057', 'Onion & Tomato Pizza', 'Onion and tomato combo', 'Double Topping Pizza', '/images/pizza/onion-tomato-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111058', 'Tomato & Sweet Corn Pizza', 'Tomato and sweet corn combo', 'Double Topping Pizza', '/images/pizza/tomato-sweetcorn-pizza.jpg', true),
+('11111111-1111-1111-1111-111111111059', 'Capsicum & Sweet Corn Pizza', 'Capsicum and sweet corn combo', 'Double Topping Pizza', '/images/pizza/capsicum-sweetcorn-pizza.jpg', true);
 
 insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_order) values
 ('11111111-1111-1111-1111-111111111050', 'Small', 6000, 1), ('11111111-1111-1111-1111-111111111050', 'Medium', 9000, 2),
@@ -316,15 +314,18 @@ insert into public.menu_items (id, name, description, category, image_path, has_
 ('11111111-1111-1111-1111-111111111061', 'Tandoori Bread Pizza', 'Tandoori spiced bread pizza', 'Cheesy Sides & Bread Pizza', '/images/pizza/tandoori-bread-pizza.jpg', false),
 ('11111111-1111-1111-1111-111111111062', 'Double Deck Bread Pizza', 'Double layered bread pizza', 'Cheesy Sides & Bread Pizza', '/images/pizza/double-deck-bread-pizza.jpg', false),
 ('11111111-1111-1111-1111-111111111063', 'Sandwich Pizza', 'Pizza meets sandwich', 'Cheesy Sides & Bread Pizza', '/images/pizza/sandwich-pizza.jpg', false),
-('11111111-1111-1111-1111-111111111064', 'Cheese Garlic Bread', 'Classic cheesy garlic bread', 'Cheesy Sides & Bread Pizza', '/images/pizza/cheese-garlic-bread.jpg', true);
+('11111111-1111-1111-1111-111111111064', 'Cheese Garlic Bread', 'Classic cheesy garlic bread', 'Cheesy Sides & Bread Pizza', '/images/pizza/cheese-garlic-bread.jpg', true),
+('11111111-1111-1111-1111-111111111065', 'Tandoori Cheese Garlic Bread', 'Scrumptious tandoori-flavoured garlic bread topped with rich melty cheese', 'Cheesy Sides & Bread Pizza', '/images/pizza/tandoori-bread-pizza.jpg', true);
 
 insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_order) values
 ('11111111-1111-1111-1111-111111111060', 'Regular', 7000, 1),
 ('11111111-1111-1111-1111-111111111061', 'Regular', 9000, 1),
 ('11111111-1111-1111-1111-111111111062', 'Regular', 12000, 1),
 ('11111111-1111-1111-1111-111111111063', 'Regular', 15000, 1),
-('11111111-1111-1111-1111-111111111064', 'Half', 7000, 1),
-('11111111-1111-1111-1111-111111111064', 'Full', 12000, 2);
+('11111111-1111-1111-1111-111111111064', 'Small', 8000, 1),
+('11111111-1111-1111-1111-111111111064', 'Medium', 14000, 2),
+('11111111-1111-1111-1111-111111111065', 'Small', 10000, 1),
+('11111111-1111-1111-1111-111111111065', 'Medium', 17000, 2);
 
 -- MILKSHAKES
 insert into public.menu_items (id, name, description, category, image_path, has_sizes) values

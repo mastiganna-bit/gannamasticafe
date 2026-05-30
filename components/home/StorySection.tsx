@@ -43,12 +43,13 @@ export default function StorySection() {
             </span>
             <h2 className="section-heading">Born from a Passion for Freshness</h2>
             <p className="font-sans text-sm text-cocoa-muted leading-relaxed">
-              Gannamasti Cafe was started with one simple belief — that fresh is always better.
-              From our signature 100% natural sugarcane juice to our crispy grilled sandwiches and
-              premium loaded pizzas, everything we make carries that belief.
+              Gannamasti Cafe was born from a simple belief: fast food shouldn't mean a compromise on your health. 
+              We don't serve factory-made food or items drenched in heavy oils. Everything on our menu is prepared freshly 
+              every single day, using wholesome, honest ingredients.
             </p>
             <p className="font-sans text-sm text-cocoa-muted leading-relaxed">
-              Zero touch. Zero ice. Just pure, honest food.
+              From our signature natural sugarcane juice to our oil-free veggie burgers and ice-free, chemical-free milkshakes, 
+              we serve real taste and real nutrition with zero compromise.
             </p>
             <div className="flex items-center gap-3 pt-2">
               <div className="w-8 h-px bg-sage" />

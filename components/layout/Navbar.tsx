@@ -88,7 +88,7 @@ export default function Navbar() {
                 />
               </div>
               <span className="font-serif text-2xl text-cocoa group-hover:text-sage transition-colors tracking-wide">
-                Gannamasti
+                Gannamasti Cafe
               </span>
             </Link>
 
@@ -195,7 +195,7 @@ export default function Navbar() {
                   <div className="w-14 h-14 relative shrink-0">
                     <Image src="/images/logo.png" alt="Gannamasti Cafe" fill className="object-contain" />
                   </div>
-                  <span className="font-serif text-2xl font-medium text-cocoa tracking-wide">Gannamasti</span>
+                  <span className="font-serif text-2xl font-medium text-cocoa tracking-wide">Gannamasti Cafe</span>
                 </Link>
                 <button
                   onClick={() => setIsMenuOpen(false)}

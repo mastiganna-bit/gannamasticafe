@@ -25,13 +25,19 @@ const dmSans = DM_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Gannamasti Cafe | Fresh Ganna Juice & More',
+  title: 'Gannamasti Cafe | Real Taste. Real Health.',
   description:
-    'Zero Touch, Zero Ice, 100% Natural Sugarcane Juice. Burgers, Pizzas, Milkshakes & More. Order Online from Gannamasti Cafe.',
-  keywords: 'ganna juice, sugarcane juice, cafe, pizza, burger, milkshake, order online',
+    'Where fast food becomes healthy and fresh. Ditch the factory-made chemicals—enjoy fresh, everyday goodness!',
+  keywords: 'gannamasti cafe, sugarcane juice, organic cafe, pizza, burger, milkshake, order online, rohtak',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Gannamasti Cafe',
+  },
   openGraph: {
     title: 'Gannamasti Cafe',
-    description: '100% Natural Ganna Juice & Premium Cafe Food',
+    description: 'Where fast food becomes healthy and fresh. Wholesome ingredients prepared fresh everyday.',
     url: 'https://gannamasticafe.in',
     siteName: 'Gannamasti Cafe',
     locale: 'en_IN',

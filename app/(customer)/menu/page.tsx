@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import MenuClientPage from '@/components/menu/MenuClientPage'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata = {
   title: 'Menu | Gannamasti Cafe',
   description: 'Browse our full menu — Fresh Ganna Juice, Burgers, Pizzas, Milkshakes & more.',
@@ -15,6 +17,37 @@ export default async function MenuPage() {
     .eq('is_available', true)
     .order('created_at', { ascending: true })
 
+  // Custom visual ordering for specific categories
+  const categoryItemOrders: Record<string, string[]> = {
+    'Refresher & Hot Brews': [
+      'Lemon Masala Soda',
+      'Lemonade',
+      'Green Mint Mojito',
+      'Watermelon Mojito',
+      'Blue Lagoon Mojito',
+      'Cold Coffee',
+      'Hot Coffee',
+    ]
+  }
+
+  // Apply custom sorting
+  const sortedItems = menuItems
+    ? [...menuItems].sort((a, b) => {
+        if (a.category === b.category && categoryItemOrders[a.category]) {
+          const order = categoryItemOrders[a.category]
+          const indexA = order.indexOf(a.name)
+          const indexB = order.indexOf(b.name)
+
+          if (indexA !== -1 && indexB !== -1) {
+            return indexA - indexB
+          }
+          if (indexA !== -1) return -1
+          if (indexB !== -1) return 1
+        }
+        return 0 // keep database order
+      })
+    : []
+
   // Group by category
   const categories = [
     'The Cane Bar',
@@ -22,10 +55,11 @@ export default async function MenuPage() {
     'Burger Binge',
     'Grill & Thrill Sandwiches',
     'Premium Loaded Pizza',
-    'Pizzas',
+    'Single Topping Pizza',
+    'Double Topping Pizza',
     'Cheesy Sides & Bread Pizza',
     'Shake it up',
   ]
 
-  return <MenuClientPage items={menuItems || []} categories={categories} />
+  return <MenuClientPage items={sortedItems} categories={categories} />
 }

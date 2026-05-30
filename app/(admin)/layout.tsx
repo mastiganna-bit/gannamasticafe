@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       {/* Admin Topbar */}
       <div className="bg-cocoa text-cream border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <span className="font-serif text-lg text-cream-100">Gannamasti — Admin</span>
+          <span className="font-serif text-lg text-cream-100">Gannamasti Cafe — Admin</span>
           <a href="/" className="font-sans text-xs text-cream-100 opacity-60 hover:opacity-100">
             ← View Site
           </a>

@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Bell, Package, LogOut, CheckCircle, Clock, ChefHat, XCircle } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Bell, Package, LogOut, CheckCircle, Clock, ChefHat, XCircle, Share, Plus, ShieldCheck, Sparkles } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Order, Notification, Profile } from '@/lib/types'
+import { Order, Notification as DbNotification, Profile } from '@/lib/types'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
@@ -25,19 +25,137 @@ export default function AccountClientPage({
   userEmail,
 }: {
   orders: Order[]
-  notifications: Notification[]
+  notifications: DbNotification[]
   profile: Profile | null
   userEmail: string
 }) {
   const [orders, setOrders] = useState(initialOrders)
   const [notifications, setNotifications] = useState(initialNotifications)
   const [activeTab, setActiveTab] = useState<'orders' | 'notifications'>('orders')
+  
+  // PWA & Notification States
+  const [isStandalone, setIsStandalone] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [showInstallDrawer, setShowInstallDrawer] = useState(false)
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
+
   const supabase = createClient()
   const router = useRouter()
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
-  // Real-time order updates
+  // Unlock audio preloads & request push permission
+  const unlockAudioAndRequestPermission = async () => {
+    // 1. Request OS notification permission
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        toast.error('Alert banners disabled. Enable notifications in your settings for lock-screen alerts!')
+      }
+    }
+
+    // 2. Pre-stage chime context to bypass iOS background silent blocks
+    const audio = new Audio('/sounds/cafe-chime.mp3')
+    audio.play().then(() => {
+      audio.pause()
+      audio.currentTime = 0
+      setAudioElement(audio)
+      setAudioUnlocked(true)
+      toast.success('Gourmet sound alerts enabled successfully!', { icon: '🔔' })
+    }).catch((err) => {
+      console.log('Audio preload blocked or failed:', err)
+      // Fallback: set a basic audio object anyway
+      setAudioElement(audio)
+      setAudioUnlocked(true)
+    })
+  }
+
+  // Multi-tier ready alerts (chime, native banner, tab title flashing)
+  const triggerReadyAlert = (order: Order) => {
+    // 1. Auditory Chime (Mobile pocket alerts)
+    if (audioElement) {
+      audioElement.play().catch((err) => console.log('Audio autoplay blocked by system:', err))
+    } else {
+      const fallbackAudio = new Audio('/sounds/cafe-chime.mp3')
+      fallbackAudio.play().catch(() => {})
+    }
+
+    // 2. Tab title flashing (For desktop multitaskers)
+    let isFlashing = true
+    const originalTitle = document.title
+    const flashInterval = setInterval(() => {
+      if (!isFlashing) {
+        clearInterval(flashInterval)
+        document.title = originalTitle
+      } else {
+        document.title = document.title === originalTitle ? '🔔 ORDER READY!' : originalTitle
+      }
+    }, 1000)
+
+    const handleFocus = () => {
+      isFlashing = false
+      window.removeEventListener('focus', handleFocus)
+    }
+    window.addEventListener('focus', handleFocus)
+
+    // 3. HTML5 standard banner popup
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Order Ready! 🍔🥤', {
+        body: `Hi ${order.customer_name}! Your delicious order is ready at the Gannamasti Cafe counter!`,
+        icon: '/images/logo.png',
+        silent: false,
+      })
+    } else {
+      toast.success('Your order is ready! Enjoy 🎉', { duration: 10000 })
+    }
+  }
+
+  // Device & PWA Environment checks
+  useEffect(() => {
+    // Check if launched as PWA standalone
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone
+    setIsStandalone(!!isPWA)
+
+    // Detect iPhone/iOS Safari
+    const isApple = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    setIsIOS(isApple)
+
+    // Register active PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        console.log('Gannamasti Cafe SW registered successfully!')
+      }).catch((err) => {
+        console.error('Service Worker fail:', err)
+      })
+    }
+
+    // Check if already dismissed once
+    const dismissed = localStorage.getItem('dismiss_pwa_onboard') === 'true'
+
+    // Capture Android standard installation triggers
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      if (!isPWA && !dismissed) {
+        setShowInstallDrawer(true)
+      }
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall)
+
+    // Trigger iPhone standalone tutorial automatically if applicable
+    if (isApple && !isPWA && !dismissed) {
+      setShowInstallDrawer(true)
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
+    }
+  }, [])
+
+  // Real-time order status subscription hook
   useEffect(() => {
     const channel = supabase
       .channel('orders-realtime')
@@ -50,16 +168,16 @@ export default function AccountClientPage({
             prev.map((o) => (o.id === updated.id ? updated : o))
           )
           if (updated.status === 'completed') {
-            toast.success('Your order is ready! Come pick it up', { duration: 6000 })
+            triggerReadyAlert(updated)
           }
         }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [audioElement])
 
-  // Real-time notifications
+  // Real-time notification logs subscription hook
   useEffect(() => {
     const channel = supabase
       .channel('notifications-realtime')
@@ -67,7 +185,7 @@ export default function AccountClientPage({
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications' },
         (payload) => {
-          const newNotif = payload.new as Notification
+          const newNotif = payload.new as DbNotification
           setNotifications((prev) => [newNotif, ...prev])
           toast.success(newNotif.title, { duration: 5000 })
         }
@@ -91,9 +209,45 @@ export default function AccountClientPage({
     toast.success('Signed out successfully')
   }
 
+  const handleAndroidInstall = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
+    console.log(`Android install choice: ${outcome}`)
+    setDeferredPrompt(null)
+    setShowInstallDrawer(false)
+  }
+
+  const dismissOnboarding = () => {
+    localStorage.setItem('dismiss_pwa_onboard', 'true')
+    setShowInstallDrawer(false)
+  }
+
   return (
-    <div className="min-h-screen bg-cream pt-20">
+    <div className="min-h-screen bg-cream pt-20 pb-16">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+        
+        {/* Live Audio & Banner Permission Activator */}
+        {!audioUnlocked && 'Notification' in window && Notification.permission !== 'granted' && (
+          <div className="mb-6 bg-sage/5 border border-sage/20 rounded-xl p-4 flex items-center justify-between gap-4 shadow-sm animate-pulse-soft">
+            <div className="flex items-center gap-3">
+              <div className="bg-sage/10 p-2 rounded-lg text-sage shrink-0">
+                <Bell size={18} />
+              </div>
+              <div>
+                <p className="font-sans text-sm font-semibold text-cocoa">Enable Sound Alerts</p>
+                <p className="font-sans text-xs text-cocoa-muted mt-0.5">Receive audio chimes when your food is ready!</p>
+              </div>
+            </div>
+            <button
+              onClick={unlockAudioAndRequestPermission}
+              className="bg-sage text-cream text-xs font-sans font-medium px-4 py-2 rounded-lg hover:bg-sage-dark transition-all duration-300 cursor-pointer shadow-sm shrink-0"
+            >
+              Turn On
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
@@ -280,6 +434,103 @@ export default function AccountClientPage({
           </div>
         )}
       </div>
+
+      {/* Gourmet PWA Installation Tutorial Drawer */}
+      <AnimatePresence>
+        {showInstallDrawer && (
+          <>
+            {/* Dark Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.4 }}
+              exit={{ opacity: 0 }}
+              onClick={dismissOnboarding}
+              className="fixed inset-0 bg-cocoa z-40 pointer-events-auto"
+            />
+
+            {/* Tutorial Drawer */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white rounded-t-3xl shadow-depth border-t border-linen z-50 p-6 pb-8"
+            >
+              {/* Swipe Handle */}
+              <div className="w-12 h-1.5 bg-linen rounded-full mx-auto mb-5" />
+
+              {/* Header */}
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-1.5 bg-sage/10 text-sage px-3 py-1 rounded-full text-xs font-sans font-medium tracking-wide mb-2">
+                  <Sparkles size={12} />
+                  <span>PREMIUM CAFE UPGRADE</span>
+                </div>
+                <h3 className="font-serif text-2xl text-cocoa font-light">Install Gannamasti Cafe App</h3>
+                <p className="font-sans text-sm text-cocoa-muted mt-1">Receive automatic chimes & native lock-screen notifications the second your food is ready!</p>
+              </div>
+
+              {/* Benefits */}
+              <div className="space-y-3.5 mb-6">
+                <div className="flex items-start gap-3 bg-cream/50 p-3 rounded-xl border border-linen/50">
+                  <div className="bg-sage/10 p-1.5 rounded-lg text-sage shrink-0">
+                    <ShieldCheck size={16} />
+                  </div>
+                  <div>
+                    <h4 className="font-sans text-xs font-bold text-cocoa">Zero Alert Delays</h4>
+                    <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">Works natively on your phone even if you lock your screen or close this tab!</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Device specific Installers */}
+              {isIOS ? (
+                // iPhone Safari Tutorial
+                <div className="space-y-4 font-sans text-xs text-cocoa">
+                  <p className="font-semibold text-center text-sage uppercase tracking-wider text-[10px]">Simple iPhone Installation</p>
+                  <div className="space-y-2.5 bg-cream/40 p-4 rounded-xl border border-linen">
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-sage/10 text-sage rounded-full flex items-center justify-center font-bold text-[10px]">1</span>
+                      <p className="flex items-center gap-1">Tap Safari's <span className="bg-white border border-linen p-1 rounded inline-flex items-center shadow-sm"><Share size={12} className="text-sage" /> Share</span> button at the bottom.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-sage/10 text-sage rounded-full flex items-center justify-center font-bold text-[10px]">2</span>
+                      <p className="flex items-center gap-1">Scroll down and select <span className="bg-white border border-linen p-1 px-2 rounded inline-flex items-center gap-1 shadow-sm"><Plus size={11} className="text-sage" /> Add to Home Screen</span>.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-sage/10 text-sage rounded-full flex items-center justify-center font-bold text-[10px]">3</span>
+                      <p>Open the app from your Home Screen & enjoy lock-screen alerts!</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={dismissOnboarding}
+                    className="w-full btn-outline py-2.5 text-xs text-center border-linen cursor-pointer"
+                  >
+                    Got It, Thank You
+                  </button>
+                </div>
+              ) : (
+                // Android & Desktop 1-Click Installer
+                <div className="space-y-3">
+                  <button
+                    onClick={handleAndroidInstall}
+                    disabled={!deferredPrompt}
+                    className="w-full btn-primary py-3 text-xs flex items-center justify-center gap-2 bg-sage hover:bg-sage-dark shadow-sm text-cream cursor-pointer disabled:opacity-50"
+                  >
+                    <Plus size={14} />
+                    Install Web App (1-Click)
+                  </button>
+                  <button
+                    onClick={dismissOnboarding}
+                    className="w-full btn-outline py-2.5 text-xs text-center border-linen cursor-pointer"
+                  >
+                    No thanks, I will keep tab open
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

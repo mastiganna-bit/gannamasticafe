@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { generateReceiptId } from '@/lib/utils'
+import { generateReceiptId, getExtraCheesePrice } from '@/lib/utils'
 import { CartItem } from '@/lib/types'
 
 // Prevent runtime compilation errors if credentials aren't set yet during build
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     for (const item of items) {
       const { data: dbSize, error: sizeError } = await supabase
         .from('menu_item_sizes')
-        .select('price_paise')
+        .select('price_paise, size_label, menu_items (category)')
         .eq('id', item.size_id)
         .single()
 
@@ -57,7 +57,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid item size detected' }, { status: 400 })
       }
 
-      calculatedTotalPaise += dbSize.price_paise * item.quantity
+      const sizeData = dbSize as any
+      let itemPricePaise = sizeData.price_paise
+
+      if (item.extra_cheese) {
+        const category = sizeData.menu_items?.category || ''
+        const sizeLabel = sizeData.size_label || ''
+        itemPricePaise += getExtraCheesePrice(category, sizeLabel)
+      }
+
+      calculatedTotalPaise += itemPricePaise * item.quantity
     }
 
     // Create Razorpay order with the database-validated secure price
