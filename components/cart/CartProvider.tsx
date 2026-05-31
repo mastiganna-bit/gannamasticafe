@@ -87,7 +87,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPaise = items.reduce((sum, i) => {
-    const extraPrice = i.extra_cheese ? getExtraCheesePrice(i.category || '', i.size_label) : 0
+    const extraPrice = i.extra_cheese ? getExtraCheesePrice(i.category || '', i.size_label, i.name) : 0
     return sum + (i.price_paise + extraPrice) * i.quantity
   }, 0)
 

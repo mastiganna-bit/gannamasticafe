@@ -80,7 +80,7 @@ export default function CartDrawer() {
                 </div>
               ) : (
                 items.map((item) => {
-                  const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                  const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
                   return (
                     <motion.div
                       key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`}

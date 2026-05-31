@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, Package, LogOut, CheckCircle, Clock, ChefHat, XCircle, Share, Plus, ShieldCheck, Sparkles } from 'lucide-react'
+import { Bell, Package, LogOut, CheckCircle, Clock, ChefHat, XCircle, Share, Plus, ShieldCheck, Sparkles, Volume2, ShieldAlert, Check, HelpCircle, VolumeX } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Order, Notification as DbNotification, Profile } from '@/lib/types'
 import { formatPrice } from '@/lib/utils'
@@ -38,41 +38,82 @@ export default function AccountClientPage({
   const [isIOS, setIsIOS] = useState(false)
   const [showInstallDrawer, setShowInstallDrawer] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  
+  // Audio & Notification diagnostics states
   const [audioUnlocked, setAudioUnlocked] = useState(false)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
+  const [notificationPermission, setNotificationPermission] = useState<string>('default')
+  const [isTestingAlerts, setIsTestingAlerts] = useState(false)
 
   const supabase = createClient()
   const router = useRouter()
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
-  // Unlock audio preloads & request push permission
+  // Live Web Speech voice fallback (highly reliable on iOS and Android)
+  const speakText = (text: string) => {
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel() // clear active queue
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = 0.95
+        utterance.pitch = 1.0
+        utterance.volume = 1.0
+        
+        // Find English/Hindi voice
+        const voices = window.speechSynthesis.getVoices()
+        const selectVoice = voices.find(v => v.lang.includes('en-IN') || v.lang.includes('en-GB') || v.lang.includes('en-US'))
+        if (selectVoice) utterance.voice = selectVoice
+
+        window.speechSynthesis.speak(utterance)
+      } catch (err) {
+        console.error('Speech synthesis execution blocked:', err)
+      }
+    }
+  }
+
+  // Active audio/notification context unlocker
   const unlockAudioAndRequestPermission = async () => {
+    setIsTestingAlerts(true)
+    let permissionResult = 'default'
+
     // 1. Request OS notification permission
     if ('Notification' in window) {
-      const permission = await Notification.requestPermission()
-      if (permission !== 'granted') {
-        toast.error('Alert banners disabled. Enable notifications in your settings for lock-screen alerts!')
+      try {
+        const permission = await Notification.requestPermission()
+        permissionResult = permission
+        setNotificationPermission(permission)
+      } catch (err) {
+        console.error('Error requesting notifications:', err)
       }
     }
 
-    // 2. Pre-stage chime context to bypass iOS background silent blocks
+    // 2. Pre-stage chime context
     const audio = new Audio('/sounds/cafe-chime.mp3')
     audio.play().then(() => {
       audio.pause()
       audio.currentTime = 0
       setAudioElement(audio)
       setAudioUnlocked(true)
-      toast.success('Gourmet sound alerts enabled successfully!', { icon: '🔔' })
+      
+      // Voice synthesis test
+      speakText('Alerts are active! Enjoy your meal.')
+      
+      toast.success('System alerts and audio chimes unlocked!', { icon: '🔊' })
+      setIsTestingAlerts(false)
     }).catch((err) => {
-      console.log('Audio preload blocked or failed:', err)
-      // Fallback: set a basic audio object anyway
+      console.log('Audio autoplay blocked or file missing (404), falling back to Voice Synthesis:', err)
+      
+      // Fallback voice synthesis test
+      speakText('Voice alerts are active!')
       setAudioElement(audio)
       setAudioUnlocked(true)
+      toast.success('Voice synthesis alerts unlocked successfully!', { icon: '🗣️' })
+      setIsTestingAlerts(false)
     })
   }
 
-  // Multi-tier ready alerts (chime, native banner, tab title flashing)
+  // Multi-tier ready alerts (chime, speech, native banner, tab title flashing)
   const triggerReadyAlert = (order: Order) => {
     // 1. Auditory Chime (Mobile pocket alerts)
     if (audioElement) {
@@ -82,7 +123,10 @@ export default function AccountClientPage({
       fallbackAudio.play().catch(() => {})
     }
 
-    // 2. Tab title flashing (For desktop multitaskers)
+    // 2. Web Speech voice fallback
+    speakText(`Attention ${order.customer_name}! Your Gannamasti Cafe order is ready! Please collect your food at the counter.`)
+
+    // 3. Tab title flashing (For desktop multitaskers)
     let isFlashing = true
     const originalTitle = document.title
     const flashInterval = setInterval(() => {
@@ -100,7 +144,7 @@ export default function AccountClientPage({
     }
     window.addEventListener('focus', handleFocus)
 
-    // 3. HTML5 standard banner popup
+    // 4. HTML5 standard banner popup
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('Order Ready! 🍔🥤', {
         body: `Hi ${order.customer_name}! Your delicious order is ready at the Gannamasti Cafe counter!`,
@@ -114,11 +158,16 @@ export default function AccountClientPage({
 
   // Device & PWA Environment checks
   useEffect(() => {
-    // Check if launched as PWA standalone
+    // Fetch initial notification permission status
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission)
+    } else {
+      setNotificationPermission('unsupported')
+    }
+
     const isPWA = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone
     setIsStandalone(!!isPWA)
 
-    // Detect iPhone/iOS Safari
     const isApple = /iPhone|iPad|iPod/i.test(navigator.userAgent)
     setIsIOS(isApple)
 
@@ -131,10 +180,8 @@ export default function AccountClientPage({
       })
     }
 
-    // Check if already dismissed once
     const dismissed = localStorage.getItem('dismiss_pwa_onboard') === 'true'
 
-    // Capture Android standard installation triggers
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e)
@@ -145,7 +192,6 @@ export default function AccountClientPage({
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall)
 
-    // Trigger iPhone standalone tutorial automatically if applicable
     if (isApple && !isPWA && !dismissed) {
       setShowInstallDrawer(true)
     }
@@ -175,6 +221,37 @@ export default function AccountClientPage({
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+  }, [audioElement])
+
+  // 15-second background polling loop (safeguard for WebSocket drops)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      // Find logged-in user details to sync
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: latestOrders } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (latestOrders) {
+        setOrders((prevOrders) => {
+          // Compare status transitions to trigger alerts!
+          latestOrders.forEach((latest) => {
+            const prev = prevOrders.find((o) => o.id === latest.id)
+            if (prev && prev.status !== 'completed' && latest.status === 'completed') {
+              triggerReadyAlert(latest as Order)
+            }
+          })
+          return latestOrders as Order[]
+        })
+      }
+    }, 15000)
+
+    return () => clearInterval(interval)
   }, [audioElement])
 
   // Real-time notification logs subscription hook
@@ -227,26 +304,97 @@ export default function AccountClientPage({
     <div className="min-h-screen bg-cream pt-20 pb-16">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
         
-        {/* Live Audio & Banner Permission Activator */}
-        {!audioUnlocked && 'Notification' in window && Notification.permission !== 'granted' && (
-          <div className="mb-6 bg-sage/5 border border-sage/20 rounded-xl p-4 flex items-center justify-between gap-4 shadow-sm animate-pulse-soft">
-            <div className="flex items-center gap-3">
-              <div className="bg-sage/10 p-2 rounded-lg text-sage shrink-0">
-                <Bell size={18} />
+        {/* Real-time System Diagnostics Dashboard (Always Visible) */}
+        <div className="mb-6 bg-white border border-linen rounded-xl2 p-5 shadow-card">
+          <div className="flex items-start justify-between gap-4 border-b border-linen pb-4 mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-sage/10 p-2 rounded-lg text-sage">
+                <Bell size={20} className="animate-pulse" />
               </div>
               <div>
-                <p className="font-sans text-sm font-semibold text-cocoa">Enable Sound Alerts</p>
-                <p className="font-sans text-xs text-cocoa-muted mt-0.5">Receive audio chimes when your food is ready!</p>
+                <h3 className="font-serif text-lg text-cocoa leading-tight">Order Alerts Control Center</h3>
+                <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">Real-time diagnostics for pocket alarms, speech synthesis and lock screen banners.</p>
               </div>
             </div>
             <button
               onClick={unlockAudioAndRequestPermission}
-              className="bg-sage text-cream text-xs font-sans font-medium px-4 py-2 rounded-lg hover:bg-sage-dark transition-all duration-300 cursor-pointer shadow-sm shrink-0"
+              disabled={isTestingAlerts}
+              className="flex items-center gap-1 bg-sage hover:bg-sage-dark text-cream font-sans text-xs font-semibold py-2 px-4 rounded-lg shadow-sm active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
-              Turn On
+              {isTestingAlerts ? 'Testing...' : '🔊 Test System Alerts'}
             </button>
           </div>
-        )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Audio chimes status */}
+            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
+              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">Audio Chimes</span>
+              <div className="flex items-center gap-1.5 mt-2">
+                {audioUnlocked ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
+                    <Check size={14} /> Unlocked & Ready
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-amber-cafe">
+                    <VolumeX size={14} className="animate-bounce" /> Click Test to Enable
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Speech synthesis status */}
+            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
+              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">Voice Synthesis (TTS)</span>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
+                  <Check size={14} /> Speech Fallback Ready
+                </span>
+              </div>
+            </div>
+
+            {/* OS Banners status */}
+            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
+              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">OS Lock Screen Banners</span>
+              <div className="flex items-center gap-1.5 mt-2">
+                {notificationPermission === 'granted' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
+                    <Check size={14} /> Fully Active
+                  </span>
+                ) : notificationPermission === 'denied' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-red-600 leading-tight">
+                    <XCircle size={14} /> Blocked in settings
+                  </span>
+                ) : notificationPermission === 'unsupported' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-cocoa-muted leading-tight" title="Supported inside PWAs only on iOS">
+                    <ShieldAlert size={14} /> standard tab block
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-amber-cafe">
+                    <ShieldAlert size={14} /> setup needed
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Detailed instruction alerts */}
+          {notificationPermission === 'unsupported' && isIOS && (
+            <div className="mt-3.5 bg-cream/70 border border-linen p-2.5 rounded-lg flex items-start gap-2 text-[11px] font-sans text-cocoa-muted leading-relaxed">
+              <ShieldAlert size={14} className="text-amber-cafe shrink-0 mt-0.5" />
+              <p>
+                <strong>iOS Safari Notice:</strong> Apple hides lock-screen banner notifications inside normal Safari tabs. To get lock-screen alerts, tap the Share button and select <strong>"Add to Home Screen"</strong> below!
+              </p>
+            </div>
+          )}
+          {notificationPermission === 'denied' && (
+            <div className="mt-3.5 bg-red-50 border border-red-100 p-2.5 rounded-lg flex items-start gap-2 text-[11px] font-sans text-red-700 leading-relaxed">
+              <ShieldAlert size={14} className="text-red-500 shrink-0 mt-0.5" />
+              <p>
+                <strong>Permission Blocked:</strong> Banners are disabled in your browser settings. Please click the padlock icon in your browser URL bar and change notifications to <strong>"Allow"</strong> to get alert banners!
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between mb-8">

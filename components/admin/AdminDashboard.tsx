@@ -378,7 +378,7 @@ export default function AdminDashboard({
                     <div className="space-y-2 mb-4 pb-4 border-b border-linen">
                       {(order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number; extra_cheese?: boolean; category?: string }>)
                         .map((item, i) => {
-                          const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                          const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
                           return (
                             <div key={i} className="space-y-0.5 text-xs font-sans">
                               <div className="flex justify-between">

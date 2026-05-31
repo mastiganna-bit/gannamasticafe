@@ -28,7 +28,18 @@ export function isExtraCheeseEligible(category: string): boolean {
   return eligibleCategories.includes(category)
 }
 
-export function getExtraCheesePrice(category: string, sizeLabel: string): number {
+export function getExtraCheesePrice(category: string, sizeLabel: string, itemName?: string): number {
+  if (itemName) {
+    const name = itemName.toLowerCase().trim()
+    if (
+      name.includes('mix veggie paneer') ||
+      name.includes('gannamasti spl') ||
+      name.includes('gannamasti special')
+    ) {
+      return 3000 // ₹30 flat in paise
+    }
+  }
+
   if (!isExtraCheeseEligible(category)) return 0
 
   const normalizedSize = sizeLabel.toLowerCase().trim()

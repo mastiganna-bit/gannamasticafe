@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useCart } from '@/components/cart/CartProvider'
 import { formatPrice, cn, getExtraCheesePrice } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Script from 'next/script'
-import { ShieldCheck, Lock, ChevronDown, ShoppingBag } from 'lucide-react'
+import { ShieldCheck, Lock, ChevronDown, ShoppingBag, MapPin, Truck, Store, Compass } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { RazorpayOptions } from '@/lib/types'
 
@@ -18,9 +18,94 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  
+  // Checkout Delivery Options
+  const [deliveryOption, setDeliveryOption] = useState<'pickup' | 'delivery'>('pickup')
+  const [address, setAddress] = useState('')
+  const [isLocating, setIsLocating] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  
   const router = useRouter()
   const supabase = createClient()
+
+  // 1. Persist and pre-fill form details from localStorage
+  useEffect(() => {
+    const savedName = localStorage.getItem('gannamasti_customer_name')
+    const savedPhone = localStorage.getItem('gannamasti_customer_phone')
+    const savedEmail = localStorage.getItem('gannamasti_customer_email')
+    const savedAddress = localStorage.getItem('gannamasti_customer_address')
+    const savedOption = localStorage.getItem('gannamasti_delivery_option')
+
+    if (savedName) setName(savedName)
+    if (savedPhone) setPhone(savedPhone)
+    if (savedEmail) setEmail(savedEmail)
+    if (savedAddress) setAddress(savedAddress)
+    if (savedOption === 'pickup' || savedOption === 'delivery') setDeliveryOption(savedOption)
+  }, [])
+
+  // 2. Pricing & Charge calculations (paise)
+  const subtotalPrice = totalPaise
+
+  // Sugarcane quantity logic (Ganna / Sugarcane matching)
+  const sugarcaneQty = items
+    .filter(item => 
+      item.name.toLowerCase().includes('sugarcane') ||
+      item.name.toLowerCase().includes('ganna') ||
+      (item.category && item.category.toLowerCase().includes('cane'))
+    )
+    .reduce((sum, item) => sum + item.quantity, 0)
+  const packagingCharges = sugarcaneQty * 500 // ₹5 per sugarcane item in paise
+
+  // Flat Platform Fee
+  const platformFee = 500 // ₹5 flat in paise
+
+  // Delivery Charges: ₹50 under ₹299 (paise threshold: 29900), free for ₹300+ (30000+)
+  const deliveryCharges = deliveryOption === 'delivery'
+    ? (subtotalPrice < 29900 ? 5000 : 0)
+    : 0
+
+  // 10% Discount on non-sugarcane items for self-pickup
+  let discountAmount = 0
+  if (deliveryOption === 'pickup') {
+    items.forEach(item => {
+      const isSugarcane = item.name.toLowerCase().includes('sugarcane') ||
+                          item.name.toLowerCase().includes('ganna') ||
+                          (item.category && item.category.toLowerCase().includes('cane'))
+      if (!isSugarcane) {
+        const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
+        discountAmount += Math.round(0.10 * (item.price_paise + extraPrice) * item.quantity)
+      }
+    })
+  }
+
+  // Grand Total calculation
+  const grandTotal = subtotalPrice + packagingCharges + platformFee + deliveryCharges - discountAmount
+
+  // HTML5 geolocation puller
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser')
+      return
+    }
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        setAddress(prev => {
+          const newCoord = `📍 GPS Delivery Link: https://maps.google.com/?q=${latitude},${longitude}\n`
+          return prev ? newCoord + prev : `${newCoord}House No / Landmark: `
+        })
+        setIsLocating(false)
+        toast.success('GPS coordinates pinned successfully! Please enter your House No/Landmark below.', { icon: '📍' })
+      },
+      (error) => {
+        console.error('Geolocation error:', error)
+        setIsLocating(false)
+        toast.error('Location block. Please enter your address manually.')
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  }
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,27 +119,42 @@ export default function CheckoutPage() {
       return
     }
     if (phone.length < 10) {
-      toast.error('Please enter a valid phone number')
+      toast.error('Please enter a valid 10-digit phone number')
+      return
+    }
+    if (deliveryOption === 'delivery' && !address) {
+      toast.error('Please provide a delivery address!')
       return
     }
 
     setIsLoading(true)
 
+    // Save details to localStorage for next time
+    localStorage.setItem('gannamasti_customer_name', name)
+    localStorage.setItem('gannamasti_customer_phone', phone)
+    localStorage.setItem('gannamasti_customer_email', email)
+    localStorage.setItem('gannamasti_customer_address', address)
+    localStorage.setItem('gannamasti_delivery_option', deliveryOption)
+
     try {
-      // Get current user (optional - allow guest checkout)
       const { data: { user } } = await supabase.auth.getUser()
+
+      // Format clean kitchen order note
+      const formattedNotes = `${notes}\n[OPTION: ${deliveryOption === 'delivery' ? 'Home Delivery' : 'Self-Pickup'}]${
+        deliveryOption === 'delivery' ? `\n[DELIVERY ADDRESS: ${address}]` : ''
+      }`
 
       // Step 1: Create Razorpay order on server
       const response = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: totalPaise,
+          amount: grandTotal,
           customer_name: name,
           customer_phone: phone,
           customer_email: email,
           items,
-          notes,
+          notes: formattedNotes,
           user_id: user?.id || null,
         }),
       })
@@ -68,10 +168,10 @@ export default function CheckoutPage() {
       // Step 2: Open Razorpay checkout
       const razorpayOptions: RazorpayOptions = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-        amount: totalPaise,
+        amount: grandTotal,
         currency: 'INR',
         name: 'Gannamasti Cafe',
-        description: `Order of ${items.length} item(s)`,
+        description: `${deliveryOption === 'delivery' ? 'Home Delivery' : 'Self-Pickup'} Order`,
         image: '/images/logo.png',
         order_id: orderData.razorpay_order_id,
         handler: async (response) => {
@@ -112,7 +212,7 @@ export default function CheckoutPage() {
         },
       }
 
-      const rzp = new window.Razorpay(razorpayOptions)
+      const rzp = new (window as any).Razorpay(razorpayOptions)
       rzp.open()
     } catch (error) {
       console.error('Checkout error:', error)
@@ -164,7 +264,7 @@ export default function CheckoutPage() {
                 {isSummaryExpanded ? 'Hide Order Summary' : 'Show Order Summary'}
               </span>
               <span className="flex items-center gap-1.5 font-semibold text-cocoa">
-                {formatPrice(totalPaise)}
+                {formatPrice(grandTotal)}
                 <ChevronDown size={14} className={cn('transition-transform duration-300', isSummaryExpanded && 'rotate-180')} />
               </span>
             </button>
@@ -175,24 +275,24 @@ export default function CheckoutPage() {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="px-4 pb-4 pt-1 border-t border-linen space-y-3 bg-cream-100"
+                  className="px-4 pb-4 pt-1 border-t border-linen bg-cream-100"
                 >
                   <div className="space-y-3 mt-2">
                     {items.map((item) => {
-                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
                       const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                       return (
-                        <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
+                        <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3 py-1">
                           <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
                             <Image
                               src={item.image_path}
                               alt={item.name}
                               fill
-                              className="object-cover"
+                              className="object-cover w-full h-full"
                             />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-sans text-xs font-medium text-cocoa truncate">{item.name}</p>
+                            <p className="font-sans text-xs font-semibold text-cocoa truncate">{item.name}</p>
                             <div className="font-sans text-[10px] text-cocoa-muted flex flex-col leading-tight">
                               <span>Size: {item.size_label} · Qty: {item.quantity}</span>
                               {item.extra_cheese && (
@@ -208,6 +308,36 @@ export default function CheckoutPage() {
                         </div>
                       )
                     })}
+
+                    {/* Breakdown inside mobile summary */}
+                    <div className="border-t border-linen pt-3 space-y-1.5 text-xs font-sans text-cocoa-muted">
+                      <div className="flex justify-between">
+                        <span>Items Subtotal</span>
+                        <span className="text-cocoa font-medium">{formatPrice(subtotalPrice)}</span>
+                      </div>
+                      {packagingCharges > 0 && (
+                        <div className="flex justify-between">
+                          <span>Sugarcane Packaging Fee (₹5/item)</span>
+                          <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Platform Fee</span>
+                        <span className="text-cocoa font-medium">{formatPrice(platformFee)}</span>
+                      </div>
+                      {deliveryOption === 'delivery' && (
+                        <div className="flex justify-between">
+                          <span>Delivery Fee {subtotalPrice >= 29900 && '(Free over ₹300)'}</span>
+                          <span className="text-cocoa font-medium">{deliveryCharges > 0 ? formatPrice(deliveryCharges) : 'FREE'}</span>
+                        </div>
+                      )}
+                      {deliveryOption === 'pickup' && discountAmount > 0 && (
+                        <div className="flex justify-between text-sage font-medium">
+                          <span>10% Self-Pickup Discount</span>
+                          <span>-{formatPrice(discountAmount)}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -218,6 +348,44 @@ export default function CheckoutPage() {
             {/* Form */}
             <div className="lg:col-span-3">
               <form onSubmit={handleCheckout} className="space-y-5">
+                
+                {/* 1. Pick Up vs Delivery Option Selector */}
+                <div className="bg-cream-200 rounded-xl2 p-5 border border-linen">
+                  <h2 className="font-display text-lg text-cocoa mb-3.5">How would you like your order?</h2>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryOption('pickup')}
+                      className={cn(
+                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
+                        deliveryOption === 'pickup'
+                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
+                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
+                      )}
+                    >
+                      <Store size={22} className="mb-1.5" />
+                      <span className="text-xs font-bold">Pick up by yourself</span>
+                      <span className="text-[9px] text-sage font-medium mt-1 uppercase tracking-wider bg-sage/10 px-2 py-0.5 rounded-full">10% OFF</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryOption('delivery')}
+                      className={cn(
+                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
+                        deliveryOption === 'delivery'
+                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
+                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
+                      )}
+                    >
+                      <Truck size={22} className="mb-1.5" />
+                      <span className="text-xs font-bold">Home Delivery</span>
+                      <span className="text-[9px] text-cocoa-muted font-medium mt-1">{subtotalPrice >= 29900 ? 'FREE DELIVERY' : '₹50 CHARGE'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Customer Details */}
                 <div className="bg-cream-200 rounded-xl2 p-5 border border-linen">
                   <h2 className="font-display text-lg text-cocoa mb-4">Your Details</h2>
                   <div className="space-y-4">
@@ -263,6 +431,38 @@ export default function CheckoutPage() {
                         className="input-field"
                       />
                     </div>
+                    
+                    {/* Delivery Address Field with Geolocator button */}
+                    {deliveryOption === 'delivery' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-3 pt-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <label className="font-sans text-xs font-medium text-cocoa-muted block">
+                            Delivery Address *
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleGetLocation}
+                            disabled={isLocating}
+                            className="flex items-center gap-1 text-[11px] font-sans font-semibold text-sage hover:text-sage-dark bg-white border border-linen p-1 px-2.5 rounded-lg shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Compass size={12} className={cn(isLocating && 'animate-spin')} />
+                            <span>{isLocating ? 'Pinning...' : '📍 Use GPS Location'}</span>
+                          </button>
+                        </div>
+                        <textarea
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                          placeholder="Flat No, Apartment, Street name, and prominent Landmark * (GPS link will auto-append here if clicked)"
+                          className="input-field resize-none h-24"
+                          required
+                        />
+                      </motion.div>
+                    )}
+
                     <div>
                       <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
                         Special Instructions (optional)
@@ -270,8 +470,8 @@ export default function CheckoutPage() {
                       <textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Any special requests?"
-                        className="input-field resize-none h-20"
+                        placeholder="Any special requests or instructions?"
+                        className="input-field resize-none h-16"
                         maxLength={200}
                       />
                     </div>
@@ -291,7 +491,7 @@ export default function CheckoutPage() {
                   ) : (
                     <>
                       <Lock size={16} />
-                      Pay {formatPrice(totalPaise)} Securely
+                      Pay {formatPrice(grandTotal)} Securely
                     </>
                   )}
                 </button>
@@ -307,9 +507,9 @@ export default function CheckoutPage() {
             <div className="hidden lg:block lg:col-span-2">
               <div className="bg-cream-200 rounded-xl2 border border-linen p-5 sticky top-24 shadow-sm">
                 <h2 className="font-display text-lg text-cocoa mb-4">Order Summary</h2>
-                <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 mb-5 max-h-[260px] overflow-y-auto pr-1 border-b border-linen/60 pb-4">
                   {items.map((item) => {
-                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label) : 0
+                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
                     const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                     return (
                       <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
@@ -339,10 +539,43 @@ export default function CheckoutPage() {
                     )
                   })}
                 </div>
-                <div className="border-t border-linen pt-3">
+
+                {/* Subtotal breakdowns */}
+                <div className="space-y-2 border-b border-linen/60 pb-3.5 mb-4 text-xs font-sans text-cocoa-muted">
                   <div className="flex justify-between items-center">
-                    <span className="font-sans text-sm text-cocoa-muted font-medium">Total</span>
-                    <span className="font-sans font-bold text-cocoa text-lg">{formatPrice(totalPaise)}</span>
+                    <span>Items Subtotal</span>
+                    <span className="text-cocoa font-medium">{formatPrice(subtotalPrice)}</span>
+                  </div>
+                  {packagingCharges > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span>Sugarcane Packaging Fee (₹5/item)</span>
+                      <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span>Platform Fee</span>
+                    <span className="text-cocoa font-medium">{formatPrice(platformFee)}</span>
+                  </div>
+                  {deliveryOption === 'delivery' && (
+                    <div className="flex justify-between items-center">
+                      <span>Delivery Fee {subtotalPrice >= 29900 && '(Free over ₹300)'}</span>
+                      <span className="text-cocoa font-medium">
+                        {deliveryCharges > 0 ? formatPrice(deliveryCharges) : 'FREE'}
+                      </span>
+                    </div>
+                  )}
+                  {deliveryOption === 'pickup' && discountAmount > 0 && (
+                    <div className="flex justify-between items-center text-sage font-semibold">
+                      <span>10% Self-Pickup Discount</span>
+                      <span>-{formatPrice(discountAmount)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-sans text-sm text-cocoa-muted font-bold">Grand Total</span>
+                    <span className="font-sans font-bold text-cocoa text-xl">{formatPrice(grandTotal)}</span>
                   </div>
                 </div>
               </div>
