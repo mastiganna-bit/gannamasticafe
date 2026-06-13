@@ -44,6 +44,10 @@ export default function AccountClientPage({
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
   const [notificationPermission, setNotificationPermission] = useState<string>('default')
   const [isTestingAlerts, setIsTestingAlerts] = useState(false)
+  
+  // Web Push Subscription states
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false)
+  const [isSubscribing, setIsSubscribing] = useState(false)
 
   const supabase = createClient()
   const router = useRouter()
@@ -201,6 +205,90 @@ export default function AccountClientPage({
     }
   }, [])
 
+  // Check active Web Push Subscription on mount
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.pushManager.getSubscription().then((sub) => {
+          setIsPushSubscribed(!!sub)
+        }).catch((err) => {
+          console.error('Error checking push subscription:', err)
+        })
+      })
+    }
+  }, [])
+
+  const togglePushSubscription = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      toast.error('Web Push notifications are not supported on this browser.')
+      return
+    }
+
+    setIsSubscribing(true)
+    try {
+      const reg = await navigator.serviceWorker.ready
+
+      if (isPushSubscribed) {
+        // Unsubscribe
+        const sub = await reg.pushManager.getSubscription()
+        if (sub) {
+          await fetch('/api/push-subscribe', {
+            method: 'DELETE',
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+            headers: { 'Content-Type': 'application/json' },
+          })
+          await sub.unsubscribe()
+        }
+        setIsPushSubscribed(false)
+        toast.success('Unsubscribed from lock-screen notifications.')
+      } else {
+        // Subscribe
+        // 1. Request notification permissions
+        const permission = await Notification.requestPermission()
+        setNotificationPermission(permission)
+
+        if (permission !== 'granted') {
+          toast.error('Notification permission was denied. Please allow notifications in browser settings.')
+          setIsSubscribing(false)
+          return
+        }
+
+        // 2. Register push subscription
+        const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        if (!vapidPublicKey) {
+          throw new Error('VAPID public key missing in environment variables.')
+        }
+
+        // Convert base64 VAPID key to Uint8Array
+        const convertedKey = urlBase64ToUint8Array(vapidPublicKey)
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedKey,
+        })
+
+        // 3. Save subscription to database
+        const res = await fetch('/api/push-subscribe', {
+          method: 'POST',
+          body: JSON.stringify(sub),
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        if (!res.ok) {
+          throw new Error('Server rejected push subscription.')
+        }
+
+        setIsPushSubscribed(true)
+        toast.success('Subscribed to lock-screen notifications!')
+      }
+    } catch (err) {
+      console.error('Push notification toggle error:', err)
+      toast.error('Failed to update push subscription settings.')
+    } finally {
+      setIsSubscribing(false)
+    }
+  }
+
   // Real-time order status subscription hook
   useEffect(() => {
     const channel = supabase
@@ -300,134 +388,124 @@ export default function AccountClientPage({
     setShowInstallDrawer(false)
   }
 
+  // Group orders by activity
+  const activeOrders = orders.filter((o) => ['pending', 'paid', 'preparing'].includes(o.status))
+  const pastOrders = orders.filter((o) => ['completed', 'cancelled'].includes(o.status))
+
   return (
     <div className="min-h-screen bg-cream pt-20 pb-16">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         
-        {/* Real-time System Diagnostics Dashboard (Always Visible) */}
-        <div className="mb-6 bg-white border border-linen rounded-xl2 p-5 shadow-card">
-          <div className="flex items-start justify-between gap-4 border-b border-linen pb-4 mb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="bg-sage/10 p-2 rounded-lg text-sage">
-                <Bell size={20} className="animate-pulse" />
+        {/* Simple & Premium Notification Alerts Settings */}
+        <div className="mb-6 bg-white border border-linen rounded-2xl p-5 shadow-xs space-y-4">
+          <h3 className="font-serif text-sm font-semibold text-cocoa border-b border-linen pb-2">
+            Notification Settings
+          </h3>
+          
+          {/* Audio alerts control */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="bg-amber-50 p-2 rounded-lg text-amber-cafe shrink-0">
+                <Volume2 size={16} />
               </div>
               <div>
-                <h3 className="font-serif text-lg text-cocoa leading-tight">Order Alerts Control Center</h3>
-                <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">Real-time diagnostics for pocket alarms, speech synthesis and lock screen banners.</p>
+                <h4 className="font-sans text-xs font-bold text-cocoa">Live Voice & Audio Chimes</h4>
+                <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">
+                  Announce when your food is ready using voice synthesis.
+                </p>
               </div>
             </div>
             <button
               onClick={unlockAudioAndRequestPermission}
               disabled={isTestingAlerts}
-              className="flex items-center gap-1 bg-sage hover:bg-sage-dark text-cream font-sans text-xs font-semibold py-2 px-4 rounded-lg shadow-sm active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              className={cn(
+                "font-sans text-xs font-bold py-2 px-4 rounded-lg shadow-xs transition-all cursor-pointer",
+                audioUnlocked 
+                  ? "bg-sage/10 text-sage border border-sage/20 cursor-default" 
+                  : "bg-amber-cafe hover:bg-amber-cafe/95 text-white"
+              )}
             >
-              {isTestingAlerts ? 'Testing...' : '🔊 Test System Alerts'}
+              {audioUnlocked ? '✓ Active' : '🔊 Turn On Audio'}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Audio chimes status */}
-            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
-              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">Audio Chimes</span>
-              <div className="flex items-center gap-1.5 mt-2">
-                {audioUnlocked ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
-                    <Check size={14} /> Unlocked & Ready
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-amber-cafe">
-                    <VolumeX size={14} className="animate-bounce" /> Click Test to Enable
-                  </span>
-                )}
+          {/* Web Push Lock Screen alerts control */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-linen/60">
+            <div className="flex items-start gap-2.5">
+              <div className="bg-sage/10 p-2 rounded-lg text-sage shrink-0">
+                <Bell size={16} />
+              </div>
+              <div>
+                <h4 className="font-sans text-xs font-bold text-cocoa">Lock Screen Notifications</h4>
+                <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">
+                  Get native notifications even when your phone screen is locked or tab is closed.
+                </p>
               </div>
             </div>
-
-            {/* Speech synthesis status */}
-            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
-              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">Voice Synthesis (TTS)</span>
-              <div className="flex items-center gap-1.5 mt-2">
-                <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
-                  <Check size={14} /> Speech Fallback Ready
-                </span>
-              </div>
-            </div>
-
-            {/* OS Banners status */}
-            <div className="bg-cream/40 border border-linen/50 rounded-xl p-3 flex flex-col justify-between">
-              <span className="font-sans text-[10px] text-cocoa-muted uppercase font-bold tracking-wider">OS Lock Screen Banners</span>
-              <div className="flex items-center gap-1.5 mt-2">
-                {notificationPermission === 'granted' ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-sage">
-                    <Check size={14} /> Fully Active
-                  </span>
-                ) : notificationPermission === 'denied' ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-red-600 leading-tight">
-                    <XCircle size={14} /> Blocked in settings
-                  </span>
-                ) : notificationPermission === 'unsupported' ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-cocoa-muted leading-tight" title="Supported inside PWAs only on iOS">
-                    <ShieldAlert size={14} /> standard tab block
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-sans font-semibold text-amber-cafe">
-                    <ShieldAlert size={14} /> setup needed
-                  </span>
-                )}
-              </div>
-            </div>
+            <button
+              onClick={togglePushSubscription}
+              disabled={isSubscribing}
+              className={cn(
+                "font-sans text-xs font-bold py-2 px-4 rounded-lg shadow-xs transition-all cursor-pointer",
+                isPushSubscribed 
+                  ? "bg-sage hover:bg-sage-dark text-white" 
+                  : "bg-cream-200 hover:bg-cream-300 text-cocoa border border-linen"
+              )}
+            >
+              {isSubscribing ? 'Processing...' : isPushSubscribed ? '✓ Subscribed' : '🔔 Subscribe'}
+            </button>
           </div>
-          
-          {/* Detailed instruction alerts */}
-          {notificationPermission === 'unsupported' && isIOS && (
-            <div className="mt-3.5 bg-cream/70 border border-linen p-2.5 rounded-lg flex items-start gap-2 text-[11px] font-sans text-cocoa-muted leading-relaxed">
-              <ShieldAlert size={14} className="text-amber-cafe shrink-0 mt-0.5" />
-              <p>
-                <strong>iOS Safari Notice:</strong> Apple hides lock-screen banner notifications inside normal Safari tabs. To get lock-screen alerts, tap the Share button and select <strong>"Add to Home Screen"</strong> below!
-              </p>
-            </div>
-          )}
-          {notificationPermission === 'denied' && (
-            <div className="mt-3.5 bg-red-50 border border-red-100 p-2.5 rounded-lg flex items-start gap-2 text-[11px] font-sans text-red-700 leading-relaxed">
-              <ShieldAlert size={14} className="text-red-500 shrink-0 mt-0.5" />
-              <p>
-                <strong>Permission Blocked:</strong> Banners are disabled in your browser settings. Please click the padlock icon in your browser URL bar and change notifications to <strong>"Allow"</strong> to get alert banners!
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <p className="font-sans text-xs text-sage font-medium uppercase tracking-widest mb-1">
-              Welcome back
-            </p>
-            <h1 className="font-serif text-3xl text-cocoa font-light">
-              {profile?.full_name || userEmail.split('@')[0]}
-            </h1>
-            <p className="font-sans text-xs text-cocoa-muted mt-1">{userEmail}</p>
+        {notificationPermission === 'denied' && (
+          <div className="mb-6 bg-amber-50/80 border border-amber-200/60 rounded-xl p-4 flex items-start gap-3 shadow-xs">
+            <ShieldAlert size={18} className="text-amber-cafe shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-sans text-xs font-bold text-cocoa">Lock Screen Banner Blocked</h4>
+              <p className="font-sans text-[11px] text-cocoa-muted mt-0.5">
+                Notifications are blocked in your browser settings. Please allow notifications in your browser parameters to get lock-screen alerts.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-white border border-linen p-5 rounded-2xl shadow-xs">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-sage/10 text-sage flex items-center justify-center font-serif text-lg font-bold shrink-0">
+              {(profile?.full_name || userEmail.split('@')[0]).charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="font-sans text-xs text-sage font-medium uppercase tracking-widest">
+                Welcome back
+              </p>
+              <h1 className="font-serif text-xl sm:text-2xl text-cocoa truncate">
+                {profile?.full_name || userEmail.split('@')[0]}
+              </h1>
+              <p className="font-sans text-xs text-cocoa-muted mt-0.5 truncate">{userEmail}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             {profile?.is_admin && (
-              <div className="mt-3">
-                <a
-                  href="/admin"
-                  className="inline-flex items-center gap-1.5 font-sans text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 py-1.5 px-3.5 rounded-full transition-all tracking-wide shadow-sm"
-                >
-                  <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-pulse" />
-                  Access Admin Panel →
-                </a>
-              </div>
+              <a
+                href="/admin"
+                className="inline-flex items-center gap-1.5 font-sans text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 py-1.5 px-3.5 rounded-full transition-all"
+              >
+                <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-pulse" />
+                Admin Panel
+              </a>
             )}
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-2 font-sans text-xs text-cocoa-muted hover:text-cocoa transition-colors py-1.5 px-3 rounded-lg hover:bg-cream-200 border border-linen/60 bg-white"
+            >
+              <LogOut size={14} />
+              Sign out
+            </button>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 font-sans text-xs text-cocoa-muted hover:text-cocoa transition-colors py-2 px-3 rounded-lg hover:bg-cream-200"
-          >
-            <LogOut size={14} />
-            Sign out
-          </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs navigation */}
         <div className="flex gap-2 mb-6 bg-cream-200 p-1 rounded-xl">
           {[
             { key: 'orders', label: 'My Orders', icon: Package },
@@ -437,16 +515,16 @@ export default function AccountClientPage({
               key={tab.key}
               onClick={() => setActiveTab(tab.key as 'orders' | 'notifications')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-sans text-sm font-medium transition-all',
+                'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-sans text-sm font-medium transition-all cursor-pointer',
                 activeTab === tab.key
-                  ? 'bg-white text-cocoa shadow-sm'
+                  ? 'bg-white text-cocoa shadow-sm font-semibold'
                   : 'text-cocoa-muted hover:text-cocoa'
               )}
             >
               <tab.icon size={14} />
               {tab.label}
               {tab.badge && tab.badge > 0 && (
-                <span className="bg-sage text-cream text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="bg-sage text-cream text-xs font-bold w-4.5 h-4.5 rounded-full flex items-center justify-center shrink-0">
                   {tab.badge}
                 </span>
               )}
@@ -454,100 +532,211 @@ export default function AccountClientPage({
           ))}
         </div>
 
-        {/* Orders Tab */}
+        {/* Orders Tab Content */}
         {activeTab === 'orders' && (
-          <div className="space-y-4">
-            {orders.length === 0 ? (
-              <div className="text-center py-16">
-                <Package size={32} className="text-linen mx-auto mb-3" />
-                <p className="font-display text-xl text-cocoa mb-1">No orders yet</p>
-                <p className="font-sans text-sm text-cocoa-muted mb-6">
-                  Place your first order from our menu
-                </p>
-                <a href="/menu" className="btn-primary text-sm">Browse Menu</a>
-              </div>
-            ) : (
-              orders.map((order) => {
-                const status = STATUS_CONFIG[order.status]
-                const StatusIcon = status.icon
-                const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
+          <div className="space-y-6">
+            
+            {/* 1. Active Orders Section */}
+            {activeOrders.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-serif text-lg text-cocoa font-medium border-b border-linen/60 pb-2">
+                  Active Orders ({activeOrders.length})
+                </h3>
+                {activeOrders.map((order) => {
+                  const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending
+                  const StatusIcon = status.icon
+                  const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
 
-                return (
-                  <motion.div
-                    key={order.id}
-                    layout
-                    className="bg-white border border-linen rounded-xl2 p-5 shadow-card"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <p className="font-sans text-xs text-cocoa-muted">
-                          {new Date(order.created_at).toLocaleDateString('en-IN', {
-                            day: 'numeric', month: 'short', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
-                        <p className="font-sans text-xs text-cocoa-muted mt-0.5">
-                          #{order.id.slice(0, 8).toUpperCase()}
-                        </p>
-                      </div>
-                      <span className={cn('flex items-center gap-1.5 text-xs font-sans font-medium px-2.5 py-1 rounded-full', status.bg, status.color)}>
-                        <StatusIcon size={11} />
-                        {status.label}
-                      </span>
-                    </div>
+                  // Steps calculation for Progress Tracker
+                  const steps = ['pending', 'paid', 'preparing', 'completed']
+                  const currentIndex = steps.indexOf(order.status)
 
-                    <div className="space-y-1.5 mb-3">
-                      {items.slice(0, 3).map((item, i) => (
-                        <div key={i} className="flex justify-between text-xs font-sans">
-                          <span className="text-cocoa">
-                            {item.name} <span className="text-cocoa-muted">({item.size_label})</span> × {item.quantity}
-                          </span>
-                          <span className="text-amber-cafe font-medium">
-                            {formatPrice(item.price_paise * item.quantity)}
-                          </span>
+                  return (
+                    <motion.div
+                      key={order.id}
+                      layout
+                      className="bg-white border-2 border-sage/20 rounded-2xl p-5 shadow-sm relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-sage/20" />
+                      
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <p className="font-sans text-[11px] text-cocoa-muted">
+                            Placed on {new Date(order.created_at).toLocaleDateString('en-IN', {
+                              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                          <p className="font-mono text-xs font-bold text-cocoa mt-0.5 uppercase">
+                            #{order.id.slice(0, 8)}
+                          </p>
                         </div>
-                      ))}
-                      {items.length > 3 && (
-                        <p className="text-xs text-cocoa-muted">+{items.length - 3} more items</p>
-                      )}
-                    </div>
-
-                    <div className="border-t border-linen pt-3 flex justify-between items-center">
-                      <span className="font-sans text-xs text-cocoa-muted">Total</span>
-                      <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
-                    </div>
-
-                    {order.status === 'completed' && (
-                      <div className="mt-3 bg-sage/10 rounded-lg px-3 py-2 flex items-center gap-2">
-                        <CheckCircle size={14} className="text-sage" />
-                        <p className="font-sans text-xs text-sage font-medium">Order completed! Enjoy 🎉</p>
+                        <span className={cn('flex items-center gap-1.5 text-xs font-sans font-semibold px-3 py-1 rounded-full border', status.bg, status.color)}>
+                          <StatusIcon size={12} className={order.status === 'preparing' ? 'animate-spin' : ''} />
+                          {status.label}
+                        </span>
                       </div>
-                    )}
-                  </motion.div>
-                )
-              })
+
+                      {/* Dynamic Progress Tracker */}
+                      <div className="py-4 my-2 border-y border-linen/50">
+                        <div className="relative flex justify-between">
+                          <div className="absolute top-2 left-0 right-0 h-0.5 bg-linen -z-10" />
+                          <div 
+                            className="absolute top-2 left-0 h-0.5 bg-sage transition-all duration-500 -z-10" 
+                            style={{ width: `${(Math.max(0, currentIndex) / 3) * 100}%` }}
+                          />
+
+                          {steps.map((step, idx) => {
+                            const isDone = idx <= currentIndex
+                            const isActive = idx === currentIndex
+                            return (
+                              <div key={step} className="flex flex-col items-center">
+                                <div 
+                                  className={cn(
+                                    "w-4.5 h-4.5 rounded-full flex items-center justify-center border transition-all duration-300 text-[9px] font-bold",
+                                    isDone 
+                                      ? "bg-sage border-sage text-cream" 
+                                      : "bg-white border-linen text-cocoa-muted"
+                                  )}
+                                >
+                                  {isDone ? '✓' : idx + 1}
+                                </div>
+                                <span 
+                                  className={cn(
+                                    "text-[10px] font-sans font-medium mt-1.5",
+                                    isActive ? "text-sage font-bold" : isDone ? "text-cocoa" : "text-cocoa-muted"
+                                  )}
+                                >
+                                  {step === 'pending' ? 'Pending' : step === 'paid' ? 'Confirmed' : step === 'preparing' ? 'Preparing' : 'Ready'}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Items */}
+                      <div className="space-y-2 mt-4">
+                        {items.map((item, i) => (
+                          <div key={i} className="flex justify-between text-xs font-sans">
+                            <span className="text-cocoa font-medium">
+                              {item.name} <span className="text-cocoa-muted">({item.size_label})</span> × {item.quantity}
+                            </span>
+                            <span className="text-cocoa font-semibold">
+                              {formatPrice(item.price_paise * item.quantity)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-linen/60 pt-3 mt-4 flex justify-between items-center text-xs">
+                        <span className="font-sans text-cocoa-muted">Grand Total</span>
+                        <span className="font-sans font-bold text-sm text-cocoa">{formatPrice(order.total_paise)}</span>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </div>
             )}
+
+            {/* 2. Order History / Past Orders */}
+            <div className="space-y-4">
+              <h3 className="font-serif text-lg text-cocoa font-medium border-b border-linen/60 pb-2">
+                Order History ({pastOrders.length})
+              </h3>
+              
+              {orders.length === 0 ? (
+                <div className="text-center py-16 bg-white border border-linen rounded-2xl shadow-xs">
+                  <Package size={32} className="text-linen mx-auto mb-3" />
+                  <p className="font-display text-lg text-cocoa mb-1">No orders yet</p>
+                  <p className="font-sans text-sm text-cocoa-muted mb-6">
+                    Browse our gourmet selection to place your first order.
+                  </p>
+                  <a href="/menu" className="btn-primary text-sm px-6 py-2.5">Browse Menu</a>
+                </div>
+              ) : pastOrders.length === 0 && activeOrders.length > 0 ? (
+                <p className="text-xs font-sans text-cocoa-muted text-center py-6 bg-white border border-linen rounded-2xl">
+                  No previous completed orders yet.
+                </p>
+              ) : (
+                pastOrders.map((order) => {
+                  const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.cancelled
+                  const StatusIcon = status.icon
+                  const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
+
+                  return (
+                    <motion.div
+                      key={order.id}
+                      className="bg-white border border-linen rounded-xl2 p-4 shadow-card hover:border-linen-dark transition-all duration-300"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-sans text-[11px] text-cocoa-muted">
+                            {new Date(order.created_at).toLocaleDateString('en-IN', {
+                              day: 'numeric', month: 'short', year: 'numeric'
+                            })}
+                          </p>
+                          <p className="font-mono text-xs text-cocoa-muted mt-0.5">
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </p>
+                        </div>
+                        <span className={cn('flex items-center gap-1.5 text-xs font-sans font-medium px-2.5 py-0.5 rounded-full border', status.bg, status.color)}>
+                          <StatusIcon size={11} />
+                          {status.label}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 mb-3">
+                        {items.slice(0, 3).map((item, i) => (
+                          <div key={i} className="flex justify-between text-xs font-sans">
+                            <span className="text-cocoa-muted">
+                              {item.name} ({item.size_label}) × {item.quantity}
+                            </span>
+                            <span className="text-cocoa-muted">
+                              {formatPrice(item.price_paise * item.quantity)}
+                            </span>
+                          </div>
+                        ))}
+                        {items.length > 3 && (
+                          <p className="text-[10px] text-sage font-medium">+ {items.length - 3} more items</p>
+                        )}
+                      </div>
+
+                      <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
+                        <span className="font-sans text-cocoa-muted">Total</span>
+                        <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                      </div>
+                    </motion.div>
+                  )
+                })
+              )}
+            </div>
           </div>
         )}
 
-        {/* Notifications Tab */}
+        {/* Notifications Tab Content */}
         {activeTab === 'notifications' && (
-          <div>
-            {notifications.length > 0 && unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="mb-4 font-sans text-xs text-sage hover:text-sage-dark transition-colors"
-              >
-                Mark all as read
-              </button>
-            )}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center border-b border-linen/60 pb-2 mb-4">
+              <h3 className="font-serif text-lg text-cocoa font-medium">
+                Notification Log
+              </h3>
+              {notifications.length > 0 && unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  className="font-sans text-xs text-sage hover:text-sage-dark font-semibold transition-colors cursor-pointer"
+                >
+                  Mark all as read
+                </button>
+              )}
+            </div>
+
             <div className="space-y-3">
               {notifications.length === 0 ? (
-                <div className="text-center py-16">
+                <div className="text-center py-16 bg-white border border-linen rounded-2xl shadow-xs">
                   <Bell size={32} className="text-linen mx-auto mb-3" />
-                  <p className="font-display text-xl text-cocoa mb-1">No notifications</p>
+                  <p className="font-display text-lg text-cocoa mb-1">No notifications yet</p>
                   <p className="font-sans text-sm text-cocoa-muted">
-                    You'll be notified when your order is ready
+                    We will notify you here the second your order status changes.
                   </p>
                 </div>
               ) : (
@@ -557,18 +746,18 @@ export default function AccountClientPage({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(
-                      'bg-white border rounded-xl p-4',
-                      notif.is_read ? 'border-linen' : 'border-sage/30 bg-sage/5'
+                      'bg-white border rounded-xl p-4 transition-all',
+                      notif.is_read ? 'border-linen' : 'border-sage/30 bg-sage/5 shadow-2xs'
                     )}
                   >
                     <div className="flex items-start gap-3">
                       {!notif.is_read && (
-                        <div className="w-2 h-2 bg-sage rounded-full shrink-0 mt-1.5" />
+                        <div className="w-2.5 h-2.5 bg-sage rounded-full shrink-0 mt-1.5 animate-pulse" />
                       )}
-                      <div className={cn(!notif.is_read ? '' : 'ml-5')}>
-                        <p className="font-sans text-sm font-medium text-cocoa">{notif.title}</p>
-                        <p className="font-sans text-xs text-cocoa-muted mt-0.5">{notif.message}</p>
-                        <p className="font-sans text-xs text-cocoa-muted mt-1.5">
+                      <div className={cn(notif.is_read ? 'ml-1' : '')}>
+                        <p className="font-sans text-sm font-semibold text-cocoa">{notif.title}</p>
+                        <p className="font-sans text-xs text-cocoa-muted mt-0.5 leading-relaxed">{notif.message}</p>
+                        <p className="font-sans text-[10px] text-cocoa-muted mt-2">
                           {new Date(notif.created_at).toLocaleTimeString('en-IN', {
                             hour: '2-digit', minute: '2-digit'
                           })}
@@ -593,7 +782,7 @@ export default function AccountClientPage({
               animate={{ opacity: 0.4 }}
               exit={{ opacity: 0 }}
               onClick={dismissOnboarding}
-              className="fixed inset-0 bg-cocoa z-40 pointer-events-auto"
+              className="fixed inset-0 bg-cocoa z-45 pointer-events-auto"
             />
 
             {/* Tutorial Drawer */}
@@ -681,4 +870,15 @@ export default function AccountClientPage({
       </AnimatePresence>
     </div>
   )
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
 }

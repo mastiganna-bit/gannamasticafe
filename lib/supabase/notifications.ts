@@ -1,4 +1,20 @@
 import { createAdminClient } from './admin'
+import webpush from 'web-push'
+
+// Initialize VAPID keys for secure push notification transmission
+if (
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+  process.env.VAPID_PRIVATE_KEY &&
+  process.env.VAPID_SUBJECT
+) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT,
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  )
+} else {
+  console.warn('[Web Push] VAPID credentials missing in environment variables. Lock screen notifications disabled.')
+}
 
 export async function createOrderStatusNotification(orderId: string, status: string) {
   try {
@@ -49,6 +65,7 @@ export async function createOrderStatusNotification(orderId: string, status: str
         return // No notification for pending or unknown statuses
     }
 
+    // 1. Insert standard database notification log
     const { error: insertError } = await supabase
       .from('notifications')
       .insert({
@@ -60,10 +77,63 @@ export async function createOrderStatusNotification(orderId: string, status: str
       })
 
     if (insertError) {
-      console.error(`Error inserting notification for order ${orderId}:`, insertError)
-    } else {
-      console.log(`Successfully created '${status}' notification for user ${order.user_id}`)
+      console.error(`Error inserting notification log for order ${orderId}:`, insertError)
     }
+
+    // 2. Fetch push subscriptions associated with this user ID
+    const { data: subscriptions, error: subError } = await supabase
+      .from('push_subscriptions')
+      .select('*')
+      .eq('user_id', order.user_id)
+
+    if (subError) {
+      console.error('Error fetching push subscriptions:', subError)
+      return
+    }
+
+    if (!subscriptions || subscriptions.length === 0) {
+      console.log(`No active push subscriptions found for user ${order.user_id}`)
+      return
+    }
+
+    // 3. Prepare payload JSON structure
+    const payload = JSON.stringify({
+      title,
+      body: message,
+      icon: '/images/logo.png',
+      badge: '/images/logo.png',
+      url: `/account`,
+    })
+
+    // 4. Dispatch Web Push requests to all user devices in parallel
+    const pushPromises = subscriptions.map(async (sub) => {
+      const pushSubscription = {
+        endpoint: sub.endpoint,
+        keys: {
+          auth: sub.keys_auth,
+          p256dh: sub.keys_p256dh,
+        },
+      }
+
+      try {
+        await webpush.sendNotification(pushSubscription, payload)
+        console.log(`[Web Push] Successfully dispatched message to: ${sub.endpoint.substring(0, 40)}...`)
+      } catch (err: any) {
+        // Automatically delete invalid, expired, or deactivated subscriptions
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          console.log(`[Web Push] Sub expired (status ${err.statusCode}). Cleaning up endpoint: ${sub.endpoint.substring(0, 40)}...`)
+          await supabase
+            .from('push_subscriptions')
+            .delete()
+            .eq('endpoint', sub.endpoint)
+        } else {
+          console.error(`[Web Push] Error for endpoint ${sub.endpoint.substring(0, 40)}...:`, err)
+        }
+      }
+    })
+
+    await Promise.allSettled(pushPromises)
+
   } catch (error) {
     console.error('Failed to create order status notification:', error)
   }

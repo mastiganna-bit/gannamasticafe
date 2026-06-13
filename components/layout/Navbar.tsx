@@ -96,6 +96,7 @@ export default function Navbar() {
             <nav className="hidden md:flex items-center gap-8">
               {[
                 { label: 'Menu', href: '/menu' },
+                { label: 'My Orders', href: '/account' },
                 { label: 'About', href: '/#story' },
                 { label: 'Contact', href: '/#contact' },
               ].map((link) => (
@@ -210,6 +211,7 @@ export default function Navbar() {
               <nav className="flex flex-col flex-1">
                 {[
                   { label: 'Menu', href: '/menu' },
+                  { label: 'My Orders', href: '/account' },
                   { label: 'About', href: '/#story' },
                   { label: 'Contact', href: '/#contact' },
                   ...(user && isAdmin ? [{ label: 'Admin Panel', href: '/admin' }] : []),
