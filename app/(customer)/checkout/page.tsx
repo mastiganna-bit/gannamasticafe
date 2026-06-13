@@ -18,6 +18,7 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [checkingAuth, setCheckingAuth] = useState(true)
   
   // Checkout Delivery Options
   const [deliveryOption, setDeliveryOption] = useState<'pickup' | 'delivery'>('pickup')
@@ -28,19 +29,61 @@ export default function CheckoutPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // 1. Persist and pre-fill form details from localStorage
+  // 1. Enforce authentication on checkout mount & autofill details
   useEffect(() => {
-    const savedName = localStorage.getItem('gannamasti_customer_name')
-    const savedPhone = localStorage.getItem('gannamasti_customer_phone')
-    const savedEmail = localStorage.getItem('gannamasti_customer_email')
-    const savedAddress = localStorage.getItem('gannamasti_customer_address')
-    const savedOption = localStorage.getItem('gannamasti_delivery_option')
+    const verifyUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        toast.error('Please sign in to place an order.', { id: 'auth-required' })
+        router.push('/login?next=/checkout')
+      } else {
+        if (user.email) {
+          setEmail(user.email)
+        }
 
-    if (savedName) setName(savedName)
-    if (savedPhone) setPhone(savedPhone)
-    if (savedEmail) setEmail(savedEmail)
-    if (savedAddress) setAddress(savedAddress)
-    if (savedOption === 'pickup' || savedOption === 'delivery') setDeliveryOption(savedOption)
+        // Fetch user metadata (Google ID)
+        const meta = user.user_metadata || {}
+        let metaName = meta.full_name || ''
+        let metaPhone = meta.phone || ''
+        let metaAddress = meta.address || ''
+
+        // Fetch profiles table as fallback/backup
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, phone')
+            .eq('id', user.id)
+            .single()
+
+          if (profile) {
+            if (!metaName && profile.full_name) metaName = profile.full_name
+            if (!metaPhone && profile.phone) metaPhone = profile.phone
+          }
+        } catch (err) {
+          console.error('Failed to fetch profile:', err)
+        }
+
+        // Fetch localStorage as final fallback
+        const savedName = localStorage.getItem('gannamasti_customer_name')
+        const savedPhone = localStorage.getItem('gannamasti_customer_phone')
+        const savedAddress = localStorage.getItem('gannamasti_customer_address')
+
+        if (metaName || savedName) setName(metaName || savedName || '')
+        if (metaPhone || savedPhone) setPhone(metaPhone || savedPhone || '')
+        if (metaAddress || savedAddress) setAddress(metaAddress || savedAddress || '')
+
+        setCheckingAuth(false)
+      }
+    }
+    verifyUser()
+  }, [router, supabase])
+  
+  // 2. Persist and pre-fill delivery option preference from localStorage
+  useEffect(() => {
+    const savedOption = localStorage.getItem('gannamasti_delivery_option')
+    if (savedOption === 'pickup' || savedOption === 'delivery') {
+      setDeliveryOption(savedOption)
+    }
   }, [])
 
   // 2. Pricing & Charge calculations (paise)
@@ -132,12 +175,31 @@ export default function CheckoutPage() {
     // Save details to localStorage for next time
     localStorage.setItem('gannamasti_customer_name', name)
     localStorage.setItem('gannamasti_customer_phone', phone)
-    localStorage.setItem('gannamasti_customer_email', email)
     localStorage.setItem('gannamasti_customer_address', address)
     localStorage.setItem('gannamasti_delivery_option', deliveryOption)
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
+
+      if (user) {
+        // Update Google ID user metadata (autofills next time)
+        await supabase.auth.updateUser({
+          data: {
+            full_name: name,
+            phone: phone,
+            address: address,
+          }
+        })
+
+        // Update public profiles table
+        await supabase
+          .from('profiles')
+          .update({
+            full_name: name,
+            phone: phone,
+          })
+          .eq('id', user.id)
+      }
 
       // Format clean kitchen order note
       const formattedNotes = `${notes}\n[OPTION: ${deliveryOption === 'delivery' ? 'Home Delivery' : 'Self-Pickup'}]${
@@ -223,6 +285,17 @@ export default function CheckoutPage() {
   }
 
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false)
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-cream pt-24 flex items-center justify-center">
+        <div className="text-center px-4 flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-sage/30 border-t-sage rounded-full animate-spin" />
+          <p className="font-sans text-sm text-cocoa-muted">Verifying your secure session...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (items.length === 0) {
     return (
@@ -418,18 +491,6 @@ export default function CheckoutPage() {
                           maxLength={10}
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
-                        Email (optional)
-                      </label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="For order receipt"
-                        className="input-field"
-                      />
                     </div>
                     
                     {/* Delivery Address Field with Geolocator button */}

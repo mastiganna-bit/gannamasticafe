@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 
 // Tell Next.js to NOT parse body (we need raw body for signature verification)
 export const dynamic = 'force-dynamic'
@@ -53,24 +54,34 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (existingOrder && existingOrder.status !== 'paid' && existingOrder.status !== 'completed') {
-        await supabase
+        const { error: updateError } = await supabase
           .from('orders')
           .update({
             status: 'paid',
             razorpay_payment_id: payment.id,
           })
           .eq('razorpay_order_id', razorpayOrderId)
+
+        if (!updateError) {
+          await createOrderStatusNotification(existingOrder.id, 'paid')
+        }
       }
     }
 
     // Handle order.paid event
     if (event.event === 'order.paid') {
       const order = event.payload.order.entity
-      await supabase
+      const { data: updatedOrder } = await supabase
         .from('orders')
         .update({ status: 'paid' })
         .eq('razorpay_order_id', order.id)
         .neq('status', 'completed') // Don't downgrade completed orders
+        .select('id')
+        .single()
+
+      if (updatedOrder) {
+        await createOrderStatusNotification(updatedOrder.id, 'paid')
+      }
     }
 
     return NextResponse.json({ status: 'ok' })

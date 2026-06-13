@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,18 +52,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to update order' }, { status: 500 })
     }
 
-    // Create notification for user
-    if (order.user_id) {
-      await adminSupabase
-        .from('notifications')
-        .insert({
-          user_id: order.user_id,
-          order_id: order.id,
-          title: 'Your order is ready!',
-          message: `Hi ${order.customer_name}! Your order of ${formatItemsCount(order.items as Array<{ quantity: number }>)} items is ready. Come pick it up!`,
-          is_read: false,
-        })
-    }
+    // Create notification for user using the unified helper
+    await createOrderStatusNotification(order_id, 'completed')
 
     // Approach B: WhatsApp Business API Integration Trigger Hook
     // Trigger automated lock-screen notifications using Meta Cloud API or your chosen WhatsApp BSP (e.g. WATI, MSG91)

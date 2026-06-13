@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { generateReceiptId, getExtraCheesePrice } from '@/lib/utils'
 import { CartItem } from '@/lib/types'
 
@@ -15,6 +16,13 @@ const razorpay = new Razorpay({
 
 export async function POST(request: NextRequest) {
   try {
+    const supabaseServer = await createClient()
+    const { data: { user } } = await supabaseServer.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required. Please log in.' }, { status: 401 })
+    }
+
     const {
       amount,
       customer_name,
@@ -22,7 +30,6 @@ export async function POST(request: NextRequest) {
       customer_email,
       items,
       notes,
-      user_id,
     }: {
       amount: number
       customer_name: string
@@ -30,7 +37,6 @@ export async function POST(request: NextRequest) {
       customer_email?: string
       items: CartItem[]
       notes?: string
-      user_id: string | null
     } = await request.json()
 
     // Validate inputs
@@ -84,7 +90,7 @@ export async function POST(request: NextRequest) {
     const { data: dbOrder, error: dbError } = await supabase
       .from('orders')
       .insert({
-        user_id,
+        user_id: user.id,
         customer_name,
         customer_phone,
         customer_email: customer_email || null,

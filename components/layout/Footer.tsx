@@ -86,6 +86,10 @@ export default function Footer() {
               {[
                 { label: 'Full Menu', href: '/menu' },
                 { label: 'My Orders', href: '/account' },
+                { label: 'Privacy Policy', href: '/privacy' },
+                { label: 'Terms & Conditions', href: '/terms' },
+                { label: 'Refund & Cancellation', href: '/refunds' },
+                { label: 'Shipping & Delivery', href: '/shipping' },
               ].map((link) => (
                 <li key={link.label}>
                   <Link

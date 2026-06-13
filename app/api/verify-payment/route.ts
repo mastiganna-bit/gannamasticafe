@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,17 +35,23 @@ export async function POST(request: NextRequest) {
 
     // Update order status to 'paid'
     const supabase = createAdminClient()
-    const { error } = await supabase
+    const { data: updatedOrder, error } = await supabase
       .from('orders')
       .update({
         status: 'paid',
         razorpay_payment_id,
       })
       .eq('razorpay_order_id', razorpay_order_id)
+      .select('id')
+      .single()
 
     if (error) {
       console.error('DB update error:', error)
       return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 })
+    }
+
+    if (updatedOrder) {
+      await createOrderStatusNotification(updatedOrder.id, 'paid')
     }
 
     return NextResponse.json({ success: true })
