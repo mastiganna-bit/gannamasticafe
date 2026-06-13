@@ -267,10 +267,20 @@ export default function AccountClientPage({
           applicationServerKey: convertedKey,
         })
 
+        // Convert to standard JSON object explicitly to avoid serialization issues in some browsers
+        const subJson = sub.toJSON()
+        const payload = {
+          endpoint: sub.endpoint || subJson.endpoint,
+          keys: {
+            auth: subJson.keys?.auth || '',
+            p256dh: subJson.keys?.p256dh || ''
+          }
+        }
+
         // 3. Save subscription to database
         const res = await fetch('/api/push-subscribe', {
           method: 'POST',
-          body: JSON.stringify(sub),
+          body: JSON.stringify(payload),
           headers: { 'Content-Type': 'application/json' },
         })
 
