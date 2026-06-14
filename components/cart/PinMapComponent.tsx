@@ -32,9 +32,10 @@ export default function PinMapComponent({ latitude, longitude, onChange }: PinMa
       if (!mapInstanceRef.current) {
         const map = L.map(mapRef.current).setView([latitude, longitude], 16)
         
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap contributors'
+        L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+          maxZoom: 20,
+          subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: '© Google Maps'
         }).addTo(map)
 
         // Custom delivery pin icon (orange pin)
