@@ -218,6 +218,9 @@ export default function CheckoutPage() {
           items,
           notes: formattedNotes,
           user_id: user?.id || null,
+          delivery_type: deliveryOption,
+          delivery_address: deliveryOption === 'delivery' ? address : null,
+          delivery_notes: notes || null,
         }),
       })
 

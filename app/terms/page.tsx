@@ -36,7 +36,7 @@ export default function TermsPage() {
           <section className="space-y-3">
             <h2 className="font-display text-lg text-cocoa">2. Ordering & Pricing</h2>
             <p>
-              All items on our menu are subject to availability. Prices for all items are calculated securely on our servers. While we strive to maintain accurate pricing, we reserve the right to correct prices or refuse orders in case of technical issues or price tampering.
+              All items on our menu are subject to availability. Prices for all products are subject to change at any time without prior notice or notification. While we strive to maintain accurate pricing, we reserve the right to modify, adjust, or correct prices, and refuse or cancel orders in case of technical issues or price tampering.
             </p>
           </section>
 

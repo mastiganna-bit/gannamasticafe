@@ -44,6 +44,11 @@ export type Order = {
   razorpay_order_id: string | null
   razorpay_payment_id: string | null
   notes: string | null
+  delivery_type?: 'dine_in' | 'takeaway' | 'delivery'
+  delivery_status?: 'unassigned' | 'assigned' | 'picked_up' | 'delivered'
+  delivery_boy_id?: string | null
+  delivery_address?: string | null
+  delivery_notes?: string | null
   created_at: string
   updated_at: string
 }

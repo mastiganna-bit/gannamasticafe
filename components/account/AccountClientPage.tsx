@@ -9,6 +9,9 @@ import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
+
+const MapComponent = dynamic(() => import('@/components/delivery/MapComponent'), { ssr: false })
 
 const STATUS_CONFIG = {
   pending: { label: 'Pending', icon: Clock, color: 'text-amber-cafe', bg: 'bg-amber-pale' },
@@ -51,6 +54,69 @@ export default function AccountClientPage({
 
   const supabase = createClient()
   const router = useRouter()
+
+  // State for streaming driver locations
+  const [driverLocations, setDriverLocations] = useState<Record<string, { latitude: number; longitude: number }>>({})
+
+  // Subscribe to real-time driver coordinates for out-for-delivery orders
+  useEffect(() => {
+    const activeDeliveryOrders = orders.filter(
+      (o: any) => o.delivery_type === 'delivery' && o.delivery_status === 'picked_up' && ['preparing', 'completed'].includes(o.status)
+    )
+
+    if (activeDeliveryOrders.length === 0) return
+
+    // Fetch initial coordinates
+    activeDeliveryOrders.forEach(async (order: any) => {
+      const { data } = await supabase
+        .from('delivery_locations')
+        .select('latitude, longitude')
+        .eq('order_id', order.id)
+        .single()
+
+      if (data) {
+        setDriverLocations((prev) => ({
+          ...prev,
+          [order.id]: { latitude: Number(data.latitude), longitude: Number(data.longitude) }
+        }))
+      }
+    })
+
+    // Setup realtime subscription
+    const channels = activeDeliveryOrders.map((order: any) => {
+      return supabase
+        .channel(`driver-loc-${order.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'delivery_locations',
+            filter: `order_id=eq.${order.id}`
+          },
+          (payload) => {
+            if (payload.new && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
+              const loc = payload.new as any
+              setDriverLocations((prev) => ({
+                ...prev,
+                [order.id]: { latitude: Number(loc.latitude), longitude: Number(loc.longitude) }
+              }))
+            } else if (payload.eventType === 'DELETE') {
+              setDriverLocations((prev) => {
+                const copy = { ...prev }
+                delete copy[order.id]
+                return copy
+              })
+            }
+          }
+        )
+        .subscribe()
+    })
+
+    return () => {
+      channels.forEach((ch) => supabase.removeChannel(ch))
+    }
+  }, [orders, supabase])
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
@@ -642,6 +708,44 @@ export default function AccountClientPage({
                         <span className="font-sans text-cocoa-muted">Grand Total</span>
                         <span className="font-sans font-bold text-sm text-cocoa">{formatPrice(order.total_paise)}</span>
                       </div>
+
+                      {order.delivery_type === 'delivery' && (
+                        <div className="mt-4 pt-4 border-t border-linen/60 space-y-2 font-sans text-xs">
+                          {order.delivery_status === 'unassigned' && (
+                            <div className="bg-amber-50 text-amber-800 border border-amber-200/50 p-2.5 rounded-xl flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />
+                              <span>Waiting for a delivery partner to accept your order...</span>
+                            </div>
+                          )}
+                          {order.delivery_status === 'assigned' && (
+                            <div className="bg-sage/10 text-sage border border-sage/20 p-2.5 rounded-xl flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 bg-sage rounded-full animate-pulse" />
+                              <span>Delivery partner assigned. Preparing for dispatch.</span>
+                            </div>
+                          )}
+                          {order.delivery_status === 'picked_up' && (
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="font-sans text-xs font-bold text-sage flex items-center gap-1.5">
+                                  <span className="w-2 h-2 bg-sage rounded-full animate-ping" />
+                                  Live Order Tracking
+                                </span>
+                                <span className="font-sans text-[10px] text-cocoa-muted">Scooter is on the way</span>
+                              </div>
+                              {driverLocations[order.id] ? (
+                                <MapComponent 
+                                  latitude={driverLocations[order.id].latitude} 
+                                  longitude={driverLocations[order.id].longitude} 
+                                />
+                              ) : (
+                                <div className="bg-cream p-4 rounded-xl border border-linen text-center text-[11px] text-cocoa-muted">
+                                  Waiting for driver's GPS coordinates...
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </motion.div>
                   )
                 })}

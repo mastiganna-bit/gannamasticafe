@@ -30,6 +30,9 @@ export async function POST(request: NextRequest) {
       customer_email,
       items,
       notes,
+      delivery_type,
+      delivery_address,
+      delivery_notes,
     }: {
       amount: number
       customer_name: string
@@ -37,6 +40,9 @@ export async function POST(request: NextRequest) {
       customer_email?: string
       items: CartItem[]
       notes?: string
+      delivery_type?: 'dine_in' | 'takeaway' | 'delivery'
+      delivery_address?: string
+      delivery_notes?: string
     } = await request.json()
 
     // Validate inputs
@@ -99,6 +105,10 @@ export async function POST(request: NextRequest) {
         status: 'pending',
         razorpay_order_id: razorpayOrder.id,
         notes: notes || null,
+        delivery_type: delivery_type || 'takeaway',
+        delivery_address: delivery_address || null,
+        delivery_notes: delivery_notes || null,
+        delivery_status: delivery_type === 'delivery' ? 'unassigned' : 'delivered',
       })
       .select()
       .single()

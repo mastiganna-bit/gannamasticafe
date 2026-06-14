@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Order } from '@/lib/types'
 import { formatPrice, getExtraCheesePrice } from '@/lib/utils'
-import { CheckCircle, Clock, ChefHat, Package, IndianRupee, Volume2, VolumeX, AlertCircle, RefreshCw, Flame } from 'lucide-react'
+import { CheckCircle, Clock, ChefHat, Package, IndianRupee, Volume2, VolumeX, AlertCircle, RefreshCw, Flame, ShoppingBag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ConfirmCompleteModal from './ConfirmCompleteModal'
+import MenuManager from './MenuManager'
 
 // Elapsed Time indicator component
 function OrderTimer({ createdAt }: { createdAt: string }) {
@@ -54,10 +55,12 @@ export default function AdminDashboard({
 }) {
   const [orders, setOrders] = useState<Order[]>(initialOrders)
   const [completedTodayOrders, setCompletedTodayOrders] = useState(completedToday)
+  const [drivers, setDrivers] = useState<Record<string, string>>({})
   const [confirmOrder, setConfirmOrder] = useState<Order | null>(null)
   const [isCompleting, setIsCompleting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [adminSoundEnabled, setAdminSoundEnabled] = useState(false)
+  const [dashboardTab, setDashboardTab] = useState<'orders' | 'menu'>('orders')
   const supabase = createClient()
 
   // Ref to hold latest state for sound subscription callback
@@ -72,11 +75,11 @@ export default function AdminDashboard({
   const refreshDashboardData = async () => {
     setIsRefreshing(true)
     try {
-      // 1. Fetch active orders
+      // 1. Fetch active orders: paid/preparing OR delivery orders not yet delivered
       const { data: activeOrders } = await supabase
         .from('orders')
         .select('*')
-        .in('status', ['paid', 'preparing'])
+        .or('status.in.(paid,preparing),and(delivery_type.eq.delivery,delivery_status.neq.delivered)')
         .order('created_at', { ascending: false })
 
       if (activeOrders) {
@@ -95,12 +98,30 @@ export default function AdminDashboard({
       if (completed) {
         setCompletedTodayOrders(completed)
       }
+
+      // 3. Fetch delivery profiles mapping
+      const { data: driverProfiles } = await supabase
+        .from('delivery_profiles')
+        .select('user_id, full_name')
+      
+      if (driverProfiles) {
+        const mapping = driverProfiles.reduce((acc: any, curr: any) => {
+          acc[curr.user_id] = curr.full_name
+          return acc
+        }, {})
+        setDrivers(mapping)
+      }
     } catch (error) {
       console.error('Error refreshing admin dashboard data:', error)
     } finally {
       setIsRefreshing(false)
     }
   }
+
+  // Fetch drivers mapping on load
+  useEffect(() => {
+    refreshDashboardData()
+  }, [])
 
   // Ring sound chime alert
   const playNewOrderSound = () => {
@@ -165,11 +186,20 @@ export default function AdminDashboard({
         { event: 'UPDATE', schema: 'public', table: 'orders' },
         (payload) => {
           const updated = payload.new as Order
-          if (updated.status === 'paid' || updated.status === 'preparing') {
-            setOrders((prev) =>
-              prev.map((o) => (o.id === updated.id ? updated : o))
-            )
-          } else if (updated.status === 'completed' || updated.status === 'cancelled') {
+          const isActive = 
+            ['paid', 'preparing'].includes(updated.status) || 
+            (updated.delivery_type === 'delivery' && updated.delivery_status !== 'delivered')
+
+          if (isActive) {
+            setOrders((prev) => {
+              const exists = prev.some((o) => o.id === updated.id)
+              if (exists) {
+                return prev.map((o) => (o.id === updated.id ? updated : o))
+              } else {
+                return [updated, ...prev]
+              }
+            })
+          } else {
             setOrders((prev) => prev.filter((o) => o.id !== updated.id))
           }
         }
@@ -233,8 +263,36 @@ export default function AdminDashboard({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       
-      {/* Sound Controller Alert bar */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-sage/5 border border-sage/20 rounded-xl p-4 shadow-sm">
+      {/* Admin Tab Controller */}
+      <div className="flex gap-2 mb-8 bg-cream-200 p-1 rounded-xl max-w-xs border border-linen">
+        <button
+          onClick={() => setDashboardTab('orders')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-sans text-xs font-bold transition-all cursor-pointer ${
+            dashboardTab === 'orders'
+              ? 'bg-sage text-white shadow-sm'
+              : 'text-cocoa-muted hover:text-cocoa'
+          }`}
+        >
+          <Package size={14} />
+          Live Orders
+        </button>
+        <button
+          onClick={() => setDashboardTab('menu')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-sans text-xs font-bold transition-all cursor-pointer ${
+            dashboardTab === 'menu'
+              ? 'bg-sage text-white shadow-sm'
+              : 'text-cocoa-muted hover:text-cocoa'
+          }`}
+        >
+          <ShoppingBag size={14} />
+          Menu Manager
+        </button>
+      </div>
+
+      {dashboardTab === 'orders' ? (
+        <>
+          {/* Sound Controller Alert bar */}
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-sage/5 border border-sage/20 rounded-xl p-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-sage/10 p-2 rounded-lg text-sage">
             {adminSoundEnabled ? <Volume2 size={18} className="animate-bounce" /> : <VolumeX size={18} />}
@@ -355,13 +413,17 @@ export default function AdminDashboard({
                         <p className="font-sans text-[11px] text-cocoa-muted">{order.customer_phone}</p>
                       </div>
                       <div className="text-right">
-                        <span className={`inline-flex items-center gap-1 text-xs font-sans font-medium px-2.5 py-0.5 rounded-full ${
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-sans font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                           order.status === 'preparing'
                             ? 'bg-amber-pale text-amber-cafe border border-amber-cafe/15'
+                            : order.status === 'completed'
+                            ? 'bg-sage/20 text-sage-dark border border-sage-dark/15'
                             : 'bg-sage/10 text-sage border border-sage/15'
                         }`}>
                           {order.status === 'preparing' ? (
                             <><ChefHat size={10} /> Preparing</>
+                          ) : order.status === 'completed' ? (
+                            <><CheckCircle size={10} /> Food Ready</>
                           ) : (
                             <><Clock size={10} /> Paid</>
                           )}
@@ -373,6 +435,27 @@ export default function AdminDashboard({
                         </div>
                       </div>
                     </div>
+
+                    {/* Delivery Details for Delivery Type */}
+                    {order.delivery_type === 'delivery' && (
+                      <div className="mb-3 flex flex-wrap gap-1.5 font-sans text-[10px] font-bold">
+                        {order.delivery_status === 'unassigned' && (
+                          <span className="bg-amber-pale border border-amber-cafe/25 text-amber-cafe px-2.5 py-1 rounded-full uppercase tracking-wider">
+                            🛵 Unassigned Delivery
+                          </span>
+                        )}
+                        {order.delivery_status === 'assigned' && (
+                          <span className="bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                            🛵 Assigned: {drivers[order.delivery_boy_id || ''] || 'Agent'}
+                          </span>
+                        )}
+                        {order.delivery_status === 'picked_up' && (
+                          <span className="bg-sage/15 border border-sage/20 text-sage-dark px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">
+                            🛵 Out for Delivery ({drivers[order.delivery_boy_id || ''] || 'Agent'})
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Items */}
                     <div className="space-y-2 mb-4 pb-4 border-b border-linen">
@@ -428,14 +511,22 @@ export default function AdminDashboard({
                           <ChefHat size={14} />
                           Start Preparing
                         </button>
-                      ) : (
+                      ) : order.status === 'preparing' ? (
                         <button
                           onClick={() => setConfirmOrder(order)}
                           className="btn-primary w-full py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <CheckCircle size={14} />
-                          Mark Completed
+                          Mark Food Ready
                         </button>
+                      ) : (
+                        <div className="w-full bg-cream text-cocoa-muted font-sans text-xs font-bold py-2.5 rounded-xl border border-linen text-center uppercase tracking-wider">
+                          {order.delivery_status === 'unassigned'
+                            ? 'Awaiting Driver Acceptance'
+                            : order.delivery_status === 'assigned'
+                            ? 'Awaiting Driver Pickup'
+                            : 'Out for Delivery (Live)'}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -446,15 +537,19 @@ export default function AdminDashboard({
         )}
       </div>
 
-      {/* Confirmation Modal */}
-      <ConfirmCompleteModal
-        isOpen={!!confirmOrder}
-        onClose={() => setConfirmOrder(null)}
-        onConfirm={handleComplete}
-        isLoading={isCompleting}
-        orderId={confirmOrder?.id || ''}
-        customerName={confirmOrder?.customer_name || ''}
-      />
+          {/* Confirmation Modal */}
+          <ConfirmCompleteModal
+            isOpen={!!confirmOrder}
+            onClose={() => setConfirmOrder(null)}
+            onConfirm={handleComplete}
+            isLoading={isCompleting}
+            orderId={confirmOrder?.id || ''}
+            customerName={confirmOrder?.customer_name || ''}
+          />
+        </>
+      ) : (
+        <MenuManager />
+      )}
     </div>
   )
 }

@@ -9,7 +9,7 @@ export default async function AdminPage() {
   const { data: orders } = await supabase
     .from('orders')
     .select('*')
-    .in('status', ['paid', 'preparing'])
+    .or('status.in.(paid,preparing),and(delivery_type.eq.delivery,delivery_status.neq.delivered)')
     .order('created_at', { ascending: false })
 
   const todayStart = new Date()
