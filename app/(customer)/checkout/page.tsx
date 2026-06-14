@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Script from 'next/script'
-import { ShieldCheck, Lock, ChevronDown, ShoppingBag, MapPin, Truck, Store, Compass } from 'lucide-react'
+import { ShieldCheck, Lock, ChevronDown, ShoppingBag, MapPin, Truck, Store, Compass, Utensils } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { RazorpayOptions } from '@/lib/types'
 import dynamic from 'next/dynamic'
@@ -24,7 +24,8 @@ export default function CheckoutPage() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   
   // Checkout Delivery Options
-  const [deliveryOption, setDeliveryOption] = useState<'pickup' | 'delivery'>('pickup')
+  const [deliveryOption, setDeliveryOption] = useState<'pickup' | 'delivery' | 'dine_in'>('pickup')
+  const [tableNumber, setTableNumber] = useState('')
   const [address, setAddress] = useState('')
   const [isLocating, setIsLocating] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -88,8 +89,8 @@ export default function CheckoutPage() {
   // 2. Persist and pre-fill delivery option preference from localStorage
   useEffect(() => {
     const savedOption = localStorage.getItem('gannamasti_delivery_option')
-    if (savedOption === 'pickup' || savedOption === 'delivery') {
-      setDeliveryOption(savedOption)
+    if (savedOption === 'pickup' || savedOption === 'delivery' || savedOption === 'dine_in') {
+      setDeliveryOption(savedOption as any)
     }
   }, [])
 
@@ -217,8 +218,12 @@ export default function CheckoutPage() {
       }
 
       // Format clean kitchen order note
-      const formattedNotes = `${notes}\n[OPTION: ${deliveryOption === 'delivery' ? 'Home Delivery' : 'Self-Pickup'}]${
+      const formattedNotes = `${notes}\n[OPTION: ${
+        deliveryOption === 'delivery' ? 'Home Delivery' : deliveryOption === 'dine_in' ? 'Dine-In' : 'Self-Pickup'
+      }]${
         deliveryOption === 'delivery' ? `\n[DELIVERY ADDRESS: ${address}]` : ''
+      }${
+        deliveryOption === 'dine_in' && tableNumber ? `\n[TABLE NUMBER: ${tableNumber}]` : ''
       }`
 
       // Step 1: Create Razorpay order on server
@@ -233,7 +238,7 @@ export default function CheckoutPage() {
           items,
           notes: formattedNotes,
           user_id: user?.id || null,
-          delivery_type: deliveryOption,
+          delivery_type: deliveryOption === 'pickup' ? 'takeaway' : deliveryOption,
           delivery_address: deliveryOption === 'delivery' ? address : null,
           delivery_notes: notes || null,
           delivery_lat: deliveryOption === 'delivery' ? deliveryLat : null,
@@ -254,7 +259,7 @@ export default function CheckoutPage() {
         amount: grandTotal,
         currency: 'INR',
         name: 'Gannamasti Cafe',
-        description: `${deliveryOption === 'delivery' ? 'Home Delivery' : 'Self-Pickup'} Order`,
+        description: `${deliveryOption === 'delivery' ? 'Home Delivery' : deliveryOption === 'dine_in' ? 'Dine-In' : 'Self-Pickup'} Order`,
         image: '/images/logo.png',
         order_id: orderData.razorpay_order_id,
         handler: async (response) => {
@@ -443,10 +448,10 @@ export default function CheckoutPage() {
             <div className="lg:col-span-3">
               <form onSubmit={handleCheckout} className="space-y-5">
                 
-                {/* 1. Pick Up vs Delivery Option Selector */}
+                {/* 1. Pick Up vs Delivery vs Dine In Option Selector */}
                 <div className="bg-cream-200 rounded-xl2 p-5 border border-linen">
                   <h2 className="font-display text-lg text-cocoa mb-3.5">How would you like your order?</h2>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => setDeliveryOption('pickup')}
@@ -458,7 +463,7 @@ export default function CheckoutPage() {
                       )}
                     >
                       <Store size={22} className="mb-1.5" />
-                      <span className="text-xs font-bold">Pick up by yourself</span>
+                      <span className="text-xs font-bold">Self-Pickup</span>
                       <span className="text-[9px] text-sage font-medium mt-1 uppercase tracking-wider bg-sage/10 px-2 py-0.5 rounded-full">10% OFF</span>
                     </button>
                     
@@ -475,6 +480,21 @@ export default function CheckoutPage() {
                       <Truck size={22} className="mb-1.5" />
                       <span className="text-xs font-bold">Home Delivery</span>
                       <span className="text-[9px] text-cocoa-muted font-medium mt-1">{subtotalPrice >= 29900 ? 'FREE DELIVERY' : '₹50 CHARGE'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryOption('dine_in')}
+                      className={cn(
+                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
+                        deliveryOption === 'dine_in'
+                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
+                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
+                      )}
+                    >
+                      <Utensils size={22} className="mb-1.5" />
+                      <span className="text-xs font-bold">Dine-In</span>
+                      <span className="text-[9px] text-cocoa-muted font-medium mt-1">EAT AT CAFE</span>
                     </button>
                   </div>
                 </div>
@@ -513,6 +533,25 @@ export default function CheckoutPage() {
                         />
                       </div>
                     </div>
+                    
+                    {deliveryOption === 'dine_in' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="pt-2"
+                      >
+                        <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
+                          Table Number (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={tableNumber}
+                          onChange={(e) => setTableNumber(e.target.value)}
+                          placeholder="e.g. Table 4 or Table 9"
+                          className="input-field"
+                        />
+                      </motion.div>
+                    )}
                     
                     {/* Delivery Address Field with Geolocator button */}
                     {deliveryOption === 'delivery' && (

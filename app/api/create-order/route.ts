@@ -62,11 +62,14 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // Calculate total price strictly on the server to prevent client-side price tampering scams
-    let calculatedTotalPaise = 0
+    let itemsSubtotal = 0
+    let sugarcaneQty = 0
+    let discountAmount = 0
+
     for (const item of items) {
       const { data: dbSize, error: sizeError } = await supabase
         .from('menu_item_sizes')
-        .select('price_paise, size_label, menu_items (category)')
+        .select('price_paise, size_label, menu_items (name, category)')
         .eq('id', item.size_id)
         .single()
 
@@ -84,12 +87,33 @@ export async function POST(request: NextRequest) {
         itemPricePaise += getExtraCheesePrice(category, sizeLabel)
       }
 
-      calculatedTotalPaise += itemPricePaise * item.quantity
+      const itemTotal = itemPricePaise * item.quantity
+      itemsSubtotal += itemTotal
+
+      const itemName = sizeData.menu_items?.name || ''
+      const itemCategory = sizeData.menu_items?.category || ''
+      const isSugarcane = itemName.toLowerCase().includes('sugarcane') ||
+                          itemName.toLowerCase().includes('ganna') ||
+                          (itemCategory && itemCategory.toLowerCase().includes('cane'))
+
+      if (isSugarcane) {
+        sugarcaneQty += item.quantity
+      } else if (delivery_type === 'takeaway') {
+        discountAmount += Math.round(0.10 * itemPricePaise * item.quantity)
+      }
     }
+
+    const packagingCharges = sugarcaneQty * 500
+    const platformFee = 500
+    const deliveryCharges = delivery_type === 'delivery'
+      ? (itemsSubtotal < 29900 ? 5000 : 0)
+      : 0
+
+    const grandTotal = itemsSubtotal + packagingCharges + platformFee + deliveryCharges - discountAmount
 
     // Create Razorpay order with the database-validated secure price
     const razorpayOrder = await razorpay.orders.create({
-      amount: calculatedTotalPaise,  // 100% server-calculated and validated
+      amount: grandTotal,  // 100% server-calculated and validated
       currency: 'INR',
       receipt: generateReceiptId(),
       notes: {
@@ -107,7 +131,7 @@ export async function POST(request: NextRequest) {
         customer_phone,
         customer_email: customer_email || null,
         items,
-        total_paise: calculatedTotalPaise,
+        total_paise: grandTotal,
         status: 'pending',
         razorpay_order_id: razorpayOrder.id,
         notes: notes || null,

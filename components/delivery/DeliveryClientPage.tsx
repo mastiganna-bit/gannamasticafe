@@ -9,6 +9,9 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { motion, AnimatePresence } from 'framer-motion'
+import dynamic from 'next/dynamic'
+
+const DriverRouteMapComponent = dynamic(() => import('@/components/delivery/DriverRouteMapComponent'), { ssr: false })
 
 interface Order {
   id: string
@@ -23,6 +26,8 @@ interface Order {
   delivery_status: string
   delivery_address?: string
   delivery_notes?: string
+  delivery_lat?: number | null
+  delivery_lng?: number | null
   created_at: string
 }
 
@@ -70,6 +75,8 @@ export default function DeliveryClientPage({
 
   // GPS Tracking watch ID reference
   const [watchId, setWatchId] = useState<number | null>(null)
+  const [gpsError, setGpsError] = useState<boolean>(false)
+  const [currentDriverCoords, setCurrentDriverCoords] = useState<{ latitude: number; longitude: number } | null>(null)
 
   // 1. Listen for new ready-to-deliver orders in real-time
   useEffect(() => {
@@ -107,60 +114,68 @@ export default function DeliveryClientPage({
   }, [supabase, user.id])
 
   // 2. Location Tracking Loop
-  // Triggers automatically whenever there is an active order with status 'picked_up'
+  // Triggers automatically whenever the driver is active and has any active delivery assigned (assigned or picked_up)
   useEffect(() => {
-    const pickedUpOrder = active.find(o => o.delivery_status === 'picked_up')
+    const trackingOrders = active.filter(o => ['assigned', 'picked_up'].includes(o.delivery_status))
 
-    if (pickedUpOrder) {
-      if (!watchId && 'geolocation' in navigator) {
-        toast('Starting live GPS coordinate broadcasting...', { icon: '📍' })
-        
-        let lastLat = 0
-        let lastLng = 0
+    if (trackingOrders.length > 0) {
+      if ('geolocation' in navigator) {
+        if (!watchId) {
+          toast('Live GPS coordinate broadcasting active...', { icon: '📍' })
+          
+          let lastLat = 0
+          let lastLng = 0
 
-        const id = navigator.geolocation.watchPosition(
-          async (pos) => {
-            const { latitude, longitude, heading, speed } = pos.coords
-            
-            // Throttle database writes unless driver moved significantly
-            const distanceMoved = Math.sqrt(
-              Math.pow(latitude - lastLat, 2) + Math.pow(longitude - lastLng, 2)
-            )
+          const id = navigator.geolocation.watchPosition(
+            async (pos) => {
+              setGpsError(false)
+              const { latitude, longitude, heading, speed } = pos.coords
+              setCurrentDriverCoords({ latitude, longitude })
+              
+              // Throttle database writes unless driver moved significantly
+              const distanceMoved = Math.sqrt(
+                Math.pow(latitude - lastLat, 2) + Math.pow(longitude - lastLng, 2)
+              )
 
-            if (distanceMoved > 0.00005) { // roughly 5 meters
-              lastLat = latitude
-              lastLng = longitude
+              if (distanceMoved > 0.00002) { // roughly 2 meters for higher accuracy
+                lastLat = latitude
+                lastLng = longitude
 
-              const { error } = await supabase
-                .from('delivery_locations')
-                .upsert({
-                  order_id: pickedUpOrder.id,
-                  delivery_boy_id: user.id,
-                  latitude,
-                  longitude,
-                  heading: heading || null,
-                  speed: speed || null,
-                  updated_at: new Date().toISOString()
-                })
-
-              if (error) {
-                console.error('Failed to stream location:', error)
+                // Upsert location for all currently active orders
+                await Promise.allSettled(
+                  trackingOrders.map(async (order) => {
+                    await supabase
+                      .from('delivery_locations')
+                      .upsert({
+                        order_id: order.id,
+                        delivery_boy_id: user.id,
+                        latitude,
+                        longitude,
+                        heading: heading || null,
+                        speed: speed || null,
+                        updated_at: new Date().toISOString()
+                      })
+                  })
+                )
               }
-            }
-          },
-          (err) => {
-            console.error('GPS watch error:', err)
-            toast.error('GPS signal error. Please ensure location services are enabled.')
-          },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
-        )
-        setWatchId(id)
+            },
+            (err) => {
+              console.error('GPS watch error:', err)
+              setGpsError(true)
+              toast.error('GPS tracking is REQUIRED to perform deliveries. Please enable location services.', { id: 'gps-error-toast' })
+            },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+          )
+          setWatchId(id)
+        }
+      } else {
+        setGpsError(true)
       }
     } else {
-      // Clear GPS watch if no active delivery is in progress
       if (watchId) {
         navigator.geolocation.clearWatch(watchId)
         setWatchId(null)
+        setCurrentDriverCoords(null)
         toast('GPS coordinate broadcasting stopped.', { icon: '📴' })
       }
     }
@@ -286,6 +301,30 @@ export default function DeliveryClientPage({
   // Helper: Get human-readable date
   const formatTime = (isoString: string) => {
     return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // If GPS permission is blocked/unsupported and driver has active orders, show block screen
+  if (gpsError) {
+    return (
+      <div className="min-h-screen bg-cream flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white border border-linen p-8 rounded-2xl max-w-md w-full shadow-sm space-y-4">
+          <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
+            <AlertTriangle size={24} />
+          </div>
+          <h2 className="font-serif text-lg text-cocoa">GPS Tracking Required</h2>
+          <p className="font-sans text-xs text-cocoa-muted leading-relaxed">
+            Continuous GPS location broadcasting is mandatory to complete active deliveries. 
+            Please grant location permissions in your browser and device settings to continue.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+          >
+            Retry & Enable Location
+          </button>
+        </div>
+      </div>
+    )
   }
 
   // If driver has not set up a profile, show the register card
@@ -570,6 +609,22 @@ export default function DeliveryClientPage({
                         )}
                       </div>
 
+                      {/* Inline Route Map for Driver */}
+                      {currentDriverCoords && order.delivery_lat && order.delivery_lng && (
+                        <div className="my-3 overflow-hidden rounded-xl border border-linen bg-cream/35">
+                          <div className="bg-sage/10 text-sage font-sans font-bold text-[10px] px-3 py-1 border-b border-linen uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-sage rounded-full animate-ping" />
+                            🗺️ In-App Route Guidance
+                          </div>
+                          <DriverRouteMapComponent
+                            driverLat={currentDriverCoords.latitude}
+                            driverLng={currentDriverCoords.longitude}
+                            destLat={Number(order.delivery_lat)}
+                            destLng={Number(order.delivery_lng)}
+                          />
+                        </div>
+                      )}
+
                       {/* Navigation Trigger */}
                       <div className="flex gap-2">
                         <a
@@ -579,7 +634,7 @@ export default function DeliveryClientPage({
                           className="flex-1 bg-cream-200 hover:bg-cream-300 border border-linen text-cocoa font-sans text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                         >
                           <Navigation size={13} />
-                          Open Map Navigation
+                          Open External Map (Google Maps Backup)
                         </a>
                       </div>
 

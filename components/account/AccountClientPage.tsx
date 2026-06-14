@@ -13,6 +13,18 @@ import dynamic from 'next/dynamic'
 
 const MapComponent = dynamic(() => import('@/components/delivery/MapComponent'), { ssr: false })
 
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371 // Radius of earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c
+}
+
 const STATUS_CONFIG = {
   pending: { label: 'Pending', icon: Clock, color: 'text-amber-cafe', bg: 'bg-amber-pale' },
   paid: { label: 'Confirmed', icon: CheckCircle, color: 'text-sage', bg: 'bg-sage/10' },
@@ -57,6 +69,8 @@ export default function AccountClientPage({
 
   // State for streaming driver locations
   const [driverLocations, setDriverLocations] = useState<Record<string, { latitude: number; longitude: number }>>({})
+  const [showPreviousOrders, setShowPreviousOrders] = useState(false)
+  const [expandedActiveOrderId, setExpandedActiveOrderId] = useState<string | null>(null)
 
   // Subscribe to real-time driver coordinates for out-for-delivery orders
   useEffect(() => {
@@ -451,12 +465,20 @@ export default function AccountClientPage({
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  const markAllRead = async () => {
-    await supabase
+  const clearAllNotifications = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase
       .from('notifications')
-      .update({ is_read: true })
-      .eq('is_read', false)
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+      .delete()
+      .eq('user_id', user.id)
+
+    if (error) {
+      toast.error('Failed to clear notifications')
+    } else {
+      setNotifications([])
+      toast.success('Notifications cleared')
+    }
   }
 
   const handleSignOut = async () => {
@@ -480,8 +502,25 @@ export default function AccountClientPage({
   }
 
   // Group orders by activity
-  const activeOrders = orders.filter((o) => ['pending', 'paid', 'preparing'].includes(o.status))
-  const pastOrders = orders.filter((o) => ['completed', 'cancelled'].includes(o.status))
+  // Current active orders: pending, paid, preparing status, OR delivery type which is not yet delivered.
+  const activeOrders = orders.filter((o) => 
+    ['pending', 'paid', 'preparing'].includes(o.status) ||
+    (o.delivery_type === 'delivery' && o.delivery_status !== 'delivered' && o.status !== 'cancelled')
+  )
+  const pastOrders = orders.filter((o) => !activeOrders.some(ao => ao.id === o.id))
+
+  // Separate past orders into today's completed/cancelled and previous orders.
+  const todaysPastOrders = pastOrders.filter((o) => {
+    const orderDate = new Date(o.created_at).toDateString()
+    const todayDate = new Date().toDateString()
+    return orderDate === todayDate
+  })
+
+  const olderPastOrders = pastOrders.filter((o) => {
+    const orderDate = new Date(o.created_at).toDateString()
+    const todayDate = new Date().toDateString()
+    return orderDate !== todayDate
+  })
 
   return (
     <div className="min-h-screen bg-cream pt-20 pb-16">
@@ -637,6 +676,7 @@ export default function AccountClientPage({
                   const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending
                   const StatusIcon = status.icon
                   const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
+                  const isExpanded = expandedActiveOrderId === order.id
 
                   // Steps calculation for Progress Tracker
                   const steps = ['pending', 'paid', 'preparing', 'completed']
@@ -646,11 +686,12 @@ export default function AccountClientPage({
                     <motion.div
                       key={order.id}
                       layout
-                      className="bg-white border-2 border-sage/20 rounded-2xl p-5 shadow-sm relative overflow-hidden"
+                      onClick={() => setExpandedActiveOrderId(isExpanded ? null : order.id)}
+                      className="bg-white border-2 border-sage/20 rounded-2xl p-5 shadow-sm relative overflow-hidden cursor-pointer hover:border-sage/40 transition-all duration-300 animate-fade-in"
                     >
                       <div className="absolute top-0 left-0 right-0 h-1 bg-sage/20" />
                       
-                      <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-start justify-between mb-2">
                         <div>
                           <p className="font-sans text-[11px] text-cocoa-muted">
                             Placed on {new Date(order.created_at).toLocaleDateString('en-IN', {
@@ -661,118 +702,174 @@ export default function AccountClientPage({
                             #{order.id.slice(0, 8)}
                           </p>
                         </div>
-                        <span className={cn('flex items-center gap-1.5 text-xs font-sans font-semibold px-3 py-1 rounded-full border', status.bg, status.color)}>
+                        <span className={cn('flex items-center gap-1.5 text-xs font-sans font-semibold px-3 py-1 rounded-full border shrink-0', status.bg, status.color)}>
                           <StatusIcon size={12} className={order.status === 'preparing' ? 'animate-spin' : ''} />
                           {status.label}
                         </span>
                       </div>
 
-                      {/* Dynamic Progress Tracker */}
-                      <div className="py-4 my-2 border-y border-linen/50">
-                        <div className="relative flex justify-between">
-                          <div className="absolute top-2 left-0 right-0 h-0.5 bg-linen -z-10" />
-                          <div 
-                            className="absolute top-2 left-0 h-0.5 bg-sage transition-all duration-500 -z-10" 
-                            style={{ width: `${(Math.max(0, currentIndex) / 3) * 100}%` }}
-                          />
-
-                          {steps.map((step, idx) => {
-                            const isDone = idx <= currentIndex
-                            const isActive = idx === currentIndex
-                            return (
-                              <div key={step} className="flex flex-col items-center">
+                      {/* Expandable Body */}
+                      <AnimatePresence initial={false}>
+                        {isExpanded ? (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="overflow-hidden mt-4 pt-4 border-t border-linen/50 space-y-4"
+                            onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking inside
+                          >
+                            {/* Dynamic Progress Tracker */}
+                            <div className="py-2 border-b border-linen/50 pb-4">
+                              <div className="relative flex justify-between">
+                                <div className="absolute top-2 left-0 right-0 h-0.5 bg-linen -z-10" />
                                 <div 
-                                  className={cn(
-                                    "w-4.5 h-4.5 rounded-full flex items-center justify-center border transition-all duration-300 text-[9px] font-bold",
-                                    isDone 
-                                      ? "bg-sage border-sage text-cream" 
-                                      : "bg-white border-linen text-cocoa-muted"
-                                  )}
-                                >
-                                  {isDone ? '✓' : idx + 1}
-                                </div>
-                                <span 
-                                  className={cn(
-                                    "text-[10px] font-sans font-medium mt-1.5",
-                                    isActive ? "text-sage font-bold" : isDone ? "text-cocoa" : "text-cocoa-muted"
-                                  )}
-                                >
-                                  {step === 'pending' ? 'Pending' : step === 'paid' ? 'Confirmed' : step === 'preparing' ? 'Preparing' : 'Ready'}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Items */}
-                      <div className="space-y-2 mt-4">
-                        {items.map((item, i) => (
-                          <div key={i} className="flex justify-between text-xs font-sans">
-                            <span className="text-cocoa font-medium">
-                              {item.name} <span className="text-cocoa-muted">({item.size_label})</span> × {item.quantity}
-                            </span>
-                            <span className="text-cocoa font-semibold">
-                              {formatPrice(item.price_paise * item.quantity)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="border-t border-linen/60 pt-3 mt-4 flex justify-between items-center text-xs">
-                        <span className="font-sans text-cocoa-muted">Grand Total</span>
-                        <span className="font-sans font-bold text-sm text-cocoa">{formatPrice(order.total_paise)}</span>
-                      </div>
-
-                      {order.delivery_type === 'delivery' && (
-                        <div className="mt-4 pt-4 border-t border-linen/60 space-y-2 font-sans text-xs">
-                          {order.delivery_otp && (
-                            <div className="bg-sage/10 text-cocoa border border-sage/20 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                              <div>
-                                <p className="font-bold text-[10px] text-sage uppercase tracking-wider">Delivery Handover OTP</p>
-                                <p className="text-cocoa-muted text-[11px] mt-0.5">Share this code with your driver only when you receive your food.</p>
-                              </div>
-                              <div className="font-mono text-lg font-bold bg-white text-sage px-4 py-1.5 rounded-lg border border-linen tracking-widest text-center self-center sm:self-auto shrink-0 shadow-xs">
-                                {order.delivery_otp}
-                              </div>
-                            </div>
-                          )}
-
-                          {order.delivery_status === 'unassigned' && (
-                            <div className="bg-amber-50 text-amber-800 border border-amber-200/50 p-2.5 rounded-xl flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />
-                              <span>Waiting for a delivery partner to accept your order...</span>
-                            </div>
-                          )}
-                          {order.delivery_status === 'assigned' && (
-                            <div className="bg-sage/10 text-sage border border-sage/20 p-2.5 rounded-xl flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 bg-sage rounded-full animate-pulse" />
-                              <span>Delivery partner assigned. Preparing for dispatch.</span>
-                            </div>
-                          )}
-                          {order.delivery_status === 'picked_up' && (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="font-sans text-xs font-bold text-sage flex items-center gap-1.5">
-                                  <span className="w-2 h-2 bg-sage rounded-full animate-ping" />
-                                  Live Order Tracking
-                                </span>
-                                <span className="font-sans text-[10px] text-cocoa-muted">Scooter is on the way</span>
-                              </div>
-                              {driverLocations[order.id] ? (
-                                <MapComponent 
-                                  latitude={driverLocations[order.id].latitude} 
-                                  longitude={driverLocations[order.id].longitude} 
+                                  className="absolute top-2 left-0 h-0.5 bg-sage transition-all duration-500 -z-10" 
+                                  style={{ width: `${(Math.max(0, currentIndex) / 3) * 100}%` }}
                                 />
-                              ) : (
-                                <div className="bg-cream p-4 rounded-xl border border-linen text-center text-[11px] text-cocoa-muted">
-                                  Waiting for driver's GPS coordinates...
-                                </div>
-                              )}
+
+                                {steps.map((step, idx) => {
+                                  const isDone = idx <= currentIndex
+                                  const isActive = idx === currentIndex
+                                  return (
+                                    <div key={step} className="flex flex-col items-center">
+                                      <div 
+                                        className={cn(
+                                          "w-4.5 h-4.5 rounded-full flex items-center justify-center border transition-all duration-300 text-[9px] font-bold",
+                                          isDone 
+                                            ? "bg-sage border-sage text-cream" 
+                                            : "bg-white border-linen text-cocoa-muted"
+                                        )}
+                                      >
+                                        {isDone ? '✓' : idx + 1}
+                                      </div>
+                                      <span 
+                                        className={cn(
+                                          "text-[10px] font-sans font-medium mt-1.5",
+                                          isActive ? "text-sage font-bold" : isDone ? "text-cocoa" : "text-cocoa-muted"
+                                        )}
+                                      >
+                                        {step === 'pending' ? 'Pending' : step === 'paid' ? 'Confirmed' : step === 'preparing' ? 'Preparing' : 'Ready'}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      )}
+
+                            {/* Items */}
+                            <div className="space-y-2 mt-4">
+                              <p className="text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-2">Order Items</p>
+                              {items.map((item, i) => (
+                                <div key={i} className="flex justify-between text-xs font-sans">
+                                  <span className="text-cocoa font-medium">
+                                    {item.name} <span className="text-cocoa-muted">({item.size_label})</span> × {item.quantity}
+                                  </span>
+                                  <span className="text-cocoa font-semibold">
+                                    {formatPrice(item.price_paise * item.quantity)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="border-t border-linen/60 pt-3 mt-4 flex justify-between items-center text-xs">
+                              <span className="font-sans text-cocoa-muted">Grand Total</span>
+                              <span className="font-sans font-bold text-sm text-cocoa">{formatPrice(order.total_paise)}</span>
+                            </div>
+
+                            {/* Delivery Section */}
+                            {order.delivery_type === 'delivery' && (
+                              <div className="mt-4 pt-4 border-t border-linen/60 space-y-3 font-sans text-xs">
+                                {order.delivery_otp && (
+                                  <div className="bg-sage/10 text-cocoa border border-sage/20 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                                    <div>
+                                      <p className="font-bold text-[10px] text-sage uppercase tracking-wider">Delivery Handover OTP</p>
+                                      <p className="text-cocoa-muted text-[11px] mt-0.5">Share this code with your driver only when you receive your food.</p>
+                                    </div>
+                                    <div className="font-mono text-lg font-bold bg-white text-sage px-4 py-1.5 rounded-lg border border-linen tracking-widest text-center self-center sm:self-auto shrink-0 shadow-xs">
+                                      {order.delivery_otp}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {order.delivery_status === 'unassigned' && (
+                                  <div className="bg-amber-50 text-amber-800 border border-amber-200/50 p-2.5 rounded-xl flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />
+                                    <span>Waiting for a delivery partner to accept your order...</span>
+                                  </div>
+                                )}
+                                {order.delivery_status === 'assigned' && (
+                                  <div className="bg-sage/10 text-sage border border-sage/20 p-2.5 rounded-xl flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-sage rounded-full animate-pulse" />
+                                    <span>Delivery partner assigned. Preparing for dispatch.</span>
+                                  </div>
+                                )}
+                                {order.delivery_status === 'picked_up' && (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-sans text-xs font-bold text-sage flex items-center gap-1.5">
+                                        <span className="w-2 h-2 bg-sage rounded-full animate-ping" />
+                                        Live Order Tracking
+                                      </span>
+                                      <span className="font-sans text-[10px] text-cocoa-muted">Scooter is on the way</span>
+                                    </div>
+
+                                    {/* Estimated Arrival / Distance */}
+                                    {driverLocations[order.id] && (() => {
+                                      const dLat = driverLocations[order.id].latitude
+                                      const dLng = driverLocations[order.id].longitude
+                                      const cLat = Number(order.delivery_lat)
+                                      const cLng = Number(order.delivery_lng)
+                                      if (cLat && cLng) {
+                                        const dist = calculateDistance(dLat, dLng, cLat, cLng)
+                                        const mins = Math.max(1, Math.round(dist * 2.4 + 3))
+                                        return (
+                                          <div className="bg-sage/15 text-sage-dark border border-sage/20 px-3 py-2 rounded-xl flex items-center justify-between text-xs">
+                                            <span className="font-semibold">🛵 Live Delivery Partner Status:</span>
+                                            <span className="font-bold">{mins} mins ({dist.toFixed(1)} km away)</span>
+                                          </div>
+                                        )
+                                      }
+                                      return null
+                                    })()}
+
+                                    {driverLocations[order.id] ? (
+                                      <MapComponent 
+                                        latitude={driverLocations[order.id].latitude} 
+                                        longitude={driverLocations[order.id].longitude} 
+                                      />
+                                    ) : (
+                                      <div className="bg-cream p-4 rounded-xl border border-linen text-center text-[11px] text-cocoa-muted">
+                                        Waiting for driver's GPS coordinates...
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Dine In Info */}
+                            {order.delivery_type === 'dine_in' && (
+                              <div className="bg-sage/5 border border-sage/10 p-3 rounded-xl text-xs text-cocoa mt-3">
+                                🍽️ <span className="font-bold">Dine-in Order</span>: Your food is being prepared. Please present order ID <span className="font-mono font-bold">#{order.id.slice(0,8)}</span> to our staff at your table.
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-center gap-1 text-[10px] font-medium text-cocoa-muted pt-2">
+                              <span>Click to collapse</span>
+                              <span>▲</span>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <div className="mt-3 flex justify-between items-center text-xs text-cocoa-muted bg-cream-100/60 p-2.5 rounded-xl border border-linen/30">
+                            <span className="font-sans text-[11px] flex items-center gap-1">
+                              {order.delivery_type === 'delivery' ? '🛵 Delivery' : order.delivery_type === 'dine_in' ? '🍽️ Dine-In' : '🥤 Takeaway'} Order
+                              • Click to track live status & items
+                            </span>
+                            <span className="text-sage text-sm font-bold">▼</span>
+                          </div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   )
                 })}
@@ -794,61 +891,131 @@ export default function AccountClientPage({
                   </p>
                   <a href="/menu" className="btn-primary text-sm px-6 py-2.5">Browse Menu</a>
                 </div>
-              ) : pastOrders.length === 0 && activeOrders.length > 0 ? (
-                <p className="text-xs font-sans text-cocoa-muted text-center py-6 bg-white border border-linen rounded-2xl">
-                  No previous completed orders yet.
-                </p>
               ) : (
-                pastOrders.map((order) => {
-                  const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.cancelled
-                  const StatusIcon = status.icon
-                  const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
+                <div className="space-y-3">
+                  {/* Today's completed / cancelled orders */}
+                  {todaysPastOrders.length === 0 && activeOrders.length === 0 ? (
+                    <div className="text-center py-8 bg-white border border-linen rounded-2xl">
+                      <p className="font-sans text-xs text-cocoa-muted">No orders completed today.</p>
+                    </div>
+                  ) : (
+                    todaysPastOrders.map((order) => {
+                      const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.cancelled
+                      const StatusIcon = status.icon
+                      const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
 
-                  return (
-                    <motion.div
-                      key={order.id}
-                      className="bg-white border border-linen rounded-xl2 p-4 shadow-card hover:border-linen-dark transition-all duration-300"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <p className="font-sans text-[11px] text-cocoa-muted">
-                            {new Date(order.created_at).toLocaleDateString('en-IN', {
-                              day: 'numeric', month: 'short', year: 'numeric'
-                            })}
-                          </p>
-                          <p className="font-mono text-xs text-cocoa-muted mt-0.5">
-                            #{order.id.slice(0, 8).toUpperCase()}
-                          </p>
-                        </div>
-                        <span className={cn('flex items-center gap-1.5 text-xs font-sans font-medium px-2.5 py-0.5 rounded-full border', status.bg, status.color)}>
-                          <StatusIcon size={11} />
-                          {status.label}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1 mb-3">
-                        {items.slice(0, 3).map((item, i) => (
-                          <div key={i} className="flex justify-between text-xs font-sans">
-                            <span className="text-cocoa-muted">
-                              {item.name} ({item.size_label}) × {item.quantity}
-                            </span>
-                            <span className="text-cocoa-muted">
-                              {formatPrice(item.price_paise * item.quantity)}
+                      return (
+                        <motion.div
+                          key={order.id}
+                          className="bg-white border border-linen rounded-xl2 p-4 shadow-card hover:border-linen-dark transition-all duration-300"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <p className="font-sans text-[11px] text-cocoa-muted">
+                                {new Date(order.created_at).toLocaleDateString('en-IN', {
+                                  day: 'numeric', month: 'short', year: 'numeric'
+                                })}
+                              </p>
+                              <p className="font-mono text-xs text-cocoa-muted mt-0.5">
+                                #{order.id.slice(0, 8).toUpperCase()}
+                              </p>
+                            </div>
+                            <span className={cn('flex items-center gap-1.5 text-xs font-sans font-medium px-2.5 py-0.5 rounded-full border', status.bg, status.color)}>
+                              <StatusIcon size={11} />
+                              {status.label}
                             </span>
                           </div>
-                        ))}
-                        {items.length > 3 && (
-                          <p className="text-[10px] text-sage font-medium">+ {items.length - 3} more items</p>
-                        )}
-                      </div>
 
-                      <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
-                        <span className="font-sans text-cocoa-muted">Total</span>
-                        <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
-                      </div>
-                    </motion.div>
-                  )
-                })
+                          <div className="space-y-1 mb-3">
+                            {items.slice(0, 3).map((item, i) => (
+                              <div key={i} className="flex justify-between text-xs font-sans">
+                                <span className="text-cocoa-muted">
+                                  {item.name} ({item.size_label}) × {item.quantity}
+                                </span>
+                                <span className="text-cocoa-muted">
+                                  {formatPrice(item.price_paise * item.quantity)}
+                                </span>
+                              </div>
+                            ))}
+                            {items.length > 3 && (
+                              <p className="text-[10px] text-sage font-medium">+ {items.length - 3} more items</p>
+                            )}
+                          </div>
+
+                          <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
+                            <span className="font-sans text-cocoa-muted">Total</span>
+                            <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                          </div>
+                        </motion.div>
+                      )
+                    })
+                  )}
+
+                  {/* Older previous orders */}
+                  {showPreviousOrders ? (
+                    olderPastOrders.map((order) => {
+                      const status = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.cancelled
+                      const StatusIcon = status.icon
+                      const items = order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number }>
+
+                      return (
+                        <motion.div
+                          key={order.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-white/80 border border-linen rounded-xl2 p-4 shadow-card hover:border-linen-dark transition-all duration-300"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <p className="font-sans text-[11px] text-cocoa-muted">
+                                {new Date(order.created_at).toLocaleDateString('en-IN', {
+                                  day: 'numeric', month: 'short', year: 'numeric'
+                                })}
+                              </p>
+                              <p className="font-mono text-xs text-cocoa-muted mt-0.5">
+                                #{order.id.slice(0, 8).toUpperCase()}
+                              </p>
+                            </div>
+                            <span className={cn('flex items-center gap-1.5 text-xs font-sans font-medium px-2.5 py-0.5 rounded-full border', status.bg, status.color)}>
+                              <StatusIcon size={11} />
+                              {status.label}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 mb-3">
+                            {items.slice(0, 3).map((item, i) => (
+                              <div key={i} className="flex justify-between text-xs font-sans">
+                                <span className="text-cocoa-muted">
+                                  {item.name} ({item.size_label}) × {item.quantity}
+                                </span>
+                                <span className="text-cocoa-muted">
+                                  {formatPrice(item.price_paise * item.quantity)}
+                                </span>
+                              </div>
+                            ))}
+                            {items.length > 3 && (
+                              <p className="text-[10px] text-sage font-medium">+ {items.length - 3} more items</p>
+                            )}
+                          </div>
+
+                          <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
+                            <span className="font-sans text-cocoa-muted">Total</span>
+                            <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                          </div>
+                        </motion.div>
+                      )
+                    })
+                  ) : (
+                    olderPastOrders.length > 0 && (
+                      <button
+                        onClick={() => setShowPreviousOrders(true)}
+                        className="w-full py-3 mt-4 text-xs font-sans font-bold text-sage hover:text-sage-dark bg-white border border-linen rounded-xl transition-all cursor-pointer shadow-xs hover:shadow-sm text-center"
+                      >
+                        See Previous Orders ({olderPastOrders.length})
+                      </button>
+                    )
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -861,12 +1028,12 @@ export default function AccountClientPage({
               <h3 className="font-serif text-lg text-cocoa font-medium">
                 Notification Log
               </h3>
-              {notifications.length > 0 && unreadCount > 0 && (
+              {notifications.length > 0 && (
                 <button
-                  onClick={markAllRead}
-                  className="font-sans text-xs text-sage hover:text-sage-dark font-semibold transition-colors cursor-pointer"
+                  onClick={clearAllNotifications}
+                  className="font-sans text-xs text-red-600 hover:text-red-700 font-semibold transition-colors cursor-pointer"
                 >
-                  Mark all as read
+                  Clear all notifications
                 </button>
               )}
             </div>
