@@ -9,6 +9,9 @@ import { CheckCircle, Clock, ChefHat, Package, IndianRupee, Volume2, VolumeX, Al
 import toast from 'react-hot-toast'
 import ConfirmCompleteModal from './ConfirmCompleteModal'
 import MenuManager from './MenuManager'
+import dynamic from 'next/dynamic'
+
+const MapComponent = dynamic(() => import('../delivery/MapComponent'), { ssr: false })
 
 // Elapsed Time indicator component
 function OrderTimer({ createdAt }: { createdAt: string }) {
@@ -56,6 +59,8 @@ export default function AdminDashboard({
   const [orders, setOrders] = useState<Order[]>(initialOrders)
   const [completedTodayOrders, setCompletedTodayOrders] = useState(completedToday)
   const [drivers, setDrivers] = useState<Record<string, string>>({})
+  const [driverLocations, setDriverLocations] = useState<Record<string, { latitude: number; longitude: number }>>({})
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null)
   const [confirmOrder, setConfirmOrder] = useState<Order | null>(null)
   const [isCompleting, setIsCompleting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -110,6 +115,19 @@ export default function AdminDashboard({
           return acc
         }, {})
         setDrivers(mapping)
+      }
+
+      // 4. Fetch active driver locations
+      const { data: locations } = await supabase
+        .from('delivery_locations')
+        .select('*')
+      
+      if (locations) {
+        const locMap = locations.reduce((acc: any, curr: any) => {
+          acc[curr.order_id] = { latitude: Number(curr.latitude), longitude: Number(curr.longitude) }
+          return acc
+        }, {})
+        setDriverLocations(locMap)
       }
     } catch (error) {
       console.error('Error refreshing admin dashboard data:', error)
@@ -209,6 +227,37 @@ export default function AdminDashboard({
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  // Subscribe to all driver locations in real-time
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-driver-locations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_locations' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const loc = payload.new as any
+            setDriverLocations((prev) => ({
+              ...prev,
+              [loc.order_id]: { latitude: Number(loc.latitude), longitude: Number(loc.longitude) }
+            }))
+          } else if (payload.eventType === 'DELETE') {
+            const loc = payload.old as any
+            setDriverLocations((prev) => {
+              const copy = { ...prev }
+              delete copy[loc.order_id]
+              return copy
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase])
+
   const handleMarkPreparing = async (orderId: string) => {
     const res = await fetch('/api/update-order-status', {
       method: 'POST',
@@ -239,8 +288,20 @@ export default function AdminDashboard({
     setConfirmOrder(null)
 
     if (res.ok) {
-      setOrders((prev) => prev.filter((o) => o.id !== confirmOrder.id))
-      toast.success(`Order completed! Customer notified`)
+      if (confirmOrder.delivery_type === 'delivery') {
+        // If delivery, keep it on the dashboard but update status to completed (shows it as ready/dispatched/etc.)
+        setOrders((prev) =>
+          prev.map((o) => (o.id === confirmOrder.id ? { ...o, status: 'completed' } : o))
+        )
+        toast.success(`Food prepared! Awaiting delivery partner dispatch.`)
+      } else {
+        // Dine in / takeaway, remove it once completed
+        setOrders((prev) => prev.filter((o) => o.id !== confirmOrder.id))
+        toast.success(`Order completed! Customer notified.`)
+      }
+      
+      // Refresh completed today counts
+      refreshDashboardData()
     } else {
       toast.error('Failed to complete order. Try again.')
     }
@@ -438,21 +499,49 @@ export default function AdminDashboard({
 
                     {/* Delivery Details for Delivery Type */}
                     {order.delivery_type === 'delivery' && (
-                      <div className="mb-3 flex flex-wrap gap-1.5 font-sans text-[10px] font-bold">
-                        {order.delivery_status === 'unassigned' && (
-                          <span className="bg-amber-pale border border-amber-cafe/25 text-amber-cafe px-2.5 py-1 rounded-full uppercase tracking-wider">
-                            🛵 Unassigned Delivery
-                          </span>
-                        )}
-                        {order.delivery_status === 'assigned' && (
-                          <span className="bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                            🛵 Assigned: {drivers[order.delivery_boy_id || ''] || 'Agent'}
-                          </span>
-                        )}
-                        {order.delivery_status === 'picked_up' && (
-                          <span className="bg-sage/15 border border-sage/20 text-sage-dark px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">
-                            🛵 Out for Delivery ({drivers[order.delivery_boy_id || ''] || 'Agent'})
-                          </span>
+                      <div className="mb-3 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 font-sans text-[10px] font-bold">
+                          <div className="flex flex-wrap gap-1.5">
+                            {order.delivery_status === 'unassigned' && (
+                              <span className="bg-amber-pale border border-amber-cafe/25 text-amber-cafe px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                🛵 Unassigned Delivery
+                              </span>
+                            )}
+                            {order.delivery_status === 'assigned' && (
+                              <span className="bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                🛵 Assigned: {drivers[order.delivery_boy_id || ''] || 'Agent'}
+                              </span>
+                            )}
+                            {order.delivery_status === 'picked_up' && (
+                              <span className="bg-sage/15 border border-sage/20 text-sage-dark px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">
+                                🛵 Out for Delivery ({drivers[order.delivery_boy_id || ''] || 'Agent'})
+                              </span>
+                            )}
+                          </div>
+
+                          {order.delivery_status === 'picked_up' && (
+                            <button
+                              onClick={() => setTrackingOrderId(trackingOrderId === order.id ? null : order.id)}
+                              className="text-[10px] text-sage hover:underline font-bold tracking-wide cursor-pointer focus:outline-none"
+                            >
+                              {trackingOrderId === order.id ? 'Hide Live Map' : 'Track Driver'}
+                            </button>
+                          )}
+                        </div>
+
+                        {order.delivery_status === 'picked_up' && trackingOrderId === order.id && (
+                          <div className="mt-2 overflow-hidden rounded-xl border border-linen shadow-sm bg-cream/30 p-1">
+                            {driverLocations[order.id] ? (
+                              <MapComponent
+                                latitude={driverLocations[order.id].latitude}
+                                longitude={driverLocations[order.id].longitude}
+                              />
+                            ) : (
+                              <div className="p-4 text-center font-sans text-[10px] text-cocoa-muted italic">
+                                Waiting for driver GPS coordinates stream...
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}

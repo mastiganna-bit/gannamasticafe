@@ -193,8 +193,13 @@ export default function AccountClientPage({
       fallbackAudio.play().catch(() => {})
     }
 
+    const isDelivery = order.delivery_type === 'delivery'
+    const voiceMsg = isDelivery
+      ? `Attention ${order.customer_name}! Your Gannamasti Cafe order has been prepared and is being packed for delivery.`
+      : `Attention ${order.customer_name}! Your Gannamasti Cafe order is ready! Please collect your food at the counter.`
+
     // 2. Web Speech voice fallback
-    speakText(`Attention ${order.customer_name}! Your Gannamasti Cafe order is ready! Please collect your food at the counter.`)
+    speakText(voiceMsg)
 
     // 3. Tab title flashing (For desktop multitaskers)
     let isFlashing = true
@@ -204,7 +209,9 @@ export default function AccountClientPage({
         clearInterval(flashInterval)
         document.title = originalTitle
       } else {
-        document.title = document.title === originalTitle ? '🔔 ORDER READY!' : originalTitle
+        document.title = document.title === originalTitle 
+          ? (isDelivery ? '🔔 ORDER PREPARED!' : '🔔 ORDER READY!') 
+          : originalTitle
       }
     }, 1000)
 
@@ -216,13 +223,21 @@ export default function AccountClientPage({
 
     // 4. HTML5 standard banner popup
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Order Ready! 🍔🥤', {
-        body: `Hi ${order.customer_name}! Your delicious order is ready at the Gannamasti Cafe counter!`,
+      const notificationTitle = isDelivery ? 'Order Prepared! 🍔📦' : 'Order Ready! 🍔🥤'
+      const notificationBody = isDelivery
+        ? `Hi ${order.customer_name}! Your order has been prepared and is being packed for delivery.`
+        : `Hi ${order.customer_name}! Your delicious order is ready at the Gannamasti Cafe counter!`
+
+      new Notification(notificationTitle, {
+        body: notificationBody,
         icon: '/images/logo.png',
         silent: false,
       })
     } else {
-      toast.success('Your order is ready! Enjoy 🎉', { duration: 10000 })
+      const toastMsg = isDelivery 
+        ? 'Your order is prepared and packing for delivery! 🎉' 
+        : 'Your order is ready! Enjoy 🎉'
+      toast.success(toastMsg, { duration: 10000 })
     }
   }
 
@@ -711,6 +726,18 @@ export default function AccountClientPage({
 
                       {order.delivery_type === 'delivery' && (
                         <div className="mt-4 pt-4 border-t border-linen/60 space-y-2 font-sans text-xs">
+                          {order.delivery_otp && (
+                            <div className="bg-sage/10 text-cocoa border border-sage/20 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                              <div>
+                                <p className="font-bold text-[10px] text-sage uppercase tracking-wider">Delivery Handover OTP</p>
+                                <p className="text-cocoa-muted text-[11px] mt-0.5">Share this code with your driver only when you receive your food.</p>
+                              </div>
+                              <div className="font-mono text-lg font-bold bg-white text-sage px-4 py-1.5 rounded-lg border border-linen tracking-widest text-center self-center sm:self-auto shrink-0 shadow-xs">
+                                {order.delivery_otp}
+                              </div>
+                            </div>
+                          )}
+
                           {order.delivery_status === 'unassigned' && (
                             <div className="bg-amber-50 text-amber-800 border border-amber-200/50 p-2.5 rounded-xl flex items-center gap-2">
                               <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />

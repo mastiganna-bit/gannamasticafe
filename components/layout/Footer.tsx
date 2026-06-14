@@ -86,6 +86,7 @@ export default function Footer() {
               {[
                 { label: 'Full Menu', href: '/menu' },
                 { label: 'My Orders', href: '/account' },
+                { label: 'Become a Partner', href: '/delivery' },
                 { label: 'Privacy Policy', href: '/privacy' },
                 { label: 'Terms & Conditions', href: '/terms' },
                 { label: 'Refund & Cancellation', href: '/refunds' },

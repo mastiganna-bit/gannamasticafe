@@ -66,6 +66,7 @@ export default function DeliveryClientPage({
   
   // Action Loading states
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [otpInputs, setOtpInputs] = useState<Record<string, string>>({})
 
   // GPS Tracking watch ID reference
   const [watchId, setWatchId] = useState<number | null>(null)
@@ -205,13 +206,13 @@ export default function DeliveryClientPage({
   }
 
   // Handle Order Status Transitions via secure API
-  const handleUpdateStatus = async (orderId: string, action: 'accept' | 'pickup' | 'deliver') => {
+  const handleUpdateStatus = async (orderId: string, action: 'accept' | 'pickup' | 'deliver', otp?: string) => {
     setActionLoading(orderId)
     try {
       const res = await fetch('/api/delivery/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, action })
+        body: JSON.stringify({ orderId, action, otp })
       })
 
       const data = await res.json()
@@ -592,13 +593,31 @@ export default function DeliveryClientPage({
                           {actionLoading === order.id ? 'Updating...' : 'Confirm Food Pickup'}
                         </button>
                       ) : (
-                        <button
-                          onClick={() => handleUpdateStatus(order.id, 'deliver')}
-                          disabled={actionLoading !== null}
-                          className="w-full bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 rounded-xl active:scale-[0.98] transition-all cursor-pointer"
-                        >
-                          {actionLoading === order.id ? 'Updating...' : 'Confirm Delivery to Customer'}
-                        </button>
+                        <div className="space-y-3 pt-2">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider">
+                              Customer Handover OTP
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              placeholder="Enter 6-digit OTP code"
+                              value={otpInputs[order.id] || ''}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '')
+                                setOtpInputs((prev) => ({ ...prev, [order.id]: val }))
+                              }}
+                              className="w-full bg-cream border border-linen rounded-xl p-3 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage font-mono text-center font-bold tracking-widest text-sm"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleUpdateStatus(order.id, 'deliver', otpInputs[order.id] || '')}
+                            disabled={actionLoading !== null || (otpInputs[order.id] || '').length !== 6}
+                            className="w-full bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 rounded-xl active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
+                          >
+                            {actionLoading === order.id ? 'Verifying OTP...' : 'Confirm Delivery to Customer'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))

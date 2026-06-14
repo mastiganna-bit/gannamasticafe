@@ -49,6 +49,10 @@ export type Order = {
   delivery_boy_id?: string | null
   delivery_address?: string | null
   delivery_notes?: string | null
+  delivery_lat?: number | null
+  delivery_lng?: number | null
+  pin_adjusted?: boolean
+  delivery_otp?: string | null
   created_at: string
   updated_at: string
 }

@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
       delivery_type,
       delivery_address,
       delivery_notes,
+      delivery_lat,
+      delivery_lng,
+      pin_adjusted,
     }: {
       amount: number
       customer_name: string
@@ -43,6 +46,9 @@ export async function POST(request: NextRequest) {
       delivery_type?: 'dine_in' | 'takeaway' | 'delivery'
       delivery_address?: string
       delivery_notes?: string
+      delivery_lat?: number
+      delivery_lng?: number
+      pin_adjusted?: boolean
     } = await request.json()
 
     // Validate inputs
@@ -109,6 +115,9 @@ export async function POST(request: NextRequest) {
         delivery_address: delivery_address || null,
         delivery_notes: delivery_notes || null,
         delivery_status: delivery_type === 'delivery' ? 'unassigned' : 'delivered',
+        delivery_lat: delivery_type === 'delivery' ? (delivery_lat || null) : null,
+        delivery_lng: delivery_type === 'delivery' ? (delivery_lng || null) : null,
+        pin_adjusted: delivery_type === 'delivery' ? (pin_adjusted || false) : false,
       })
       .select()
       .single()

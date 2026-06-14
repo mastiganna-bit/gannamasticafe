@@ -11,6 +11,9 @@ import Script from 'next/script'
 import { ShieldCheck, Lock, ChevronDown, ShoppingBag, MapPin, Truck, Store, Compass } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { RazorpayOptions } from '@/lib/types'
+import dynamic from 'next/dynamic'
+
+const PinMapComponent = dynamic(() => import('@/components/cart/PinMapComponent'), { ssr: false })
 
 export default function CheckoutPage() {
   const { items, totalPaise, clearCart } = useCart()
@@ -25,6 +28,10 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState('')
   const [isLocating, setIsLocating] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [deliveryLat, setDeliveryLat] = useState<number | null>(null)
+  const [deliveryLng, setDeliveryLng] = useState<number | null>(null)
+  const [pinAdjusted, setPinAdjusted] = useState(false)
+  const [showMap, setShowMap] = useState(false)
   
   const router = useRouter()
   const supabase = createClient()
@@ -134,12 +141,20 @@ export default function CheckoutPage() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords
+        setDeliveryLat(latitude)
+        setDeliveryLng(longitude)
+        setPinAdjusted(true)
+        setShowMap(true)
+        
         setAddress(prev => {
           const newCoord = `📍 GPS Delivery Link: https://maps.google.com/?q=${latitude},${longitude}\n`
+          if (prev.includes('GPS Delivery Link')) {
+            return prev.replace(/📍 GPS Delivery Link: https:\/\/maps\.google\.com\/\?q=[-\d.]+,[-\d.]+\n?/, newCoord)
+          }
           return prev ? newCoord + prev : `${newCoord}House No / Landmark: `
         })
         setIsLocating(false)
-        toast.success('GPS coordinates pinned successfully! Please enter your House No/Landmark below.', { icon: '📍' })
+        toast.success('GPS location captured! Adjust pin on the map below for high precision.', { icon: '📍' })
       },
       (error) => {
         console.error('Geolocation error:', error)
@@ -221,6 +236,9 @@ export default function CheckoutPage() {
           delivery_type: deliveryOption,
           delivery_address: deliveryOption === 'delivery' ? address : null,
           delivery_notes: notes || null,
+          delivery_lat: deliveryOption === 'delivery' ? deliveryLat : null,
+          delivery_lng: deliveryOption === 'delivery' ? deliveryLng : null,
+          pin_adjusted: deliveryOption === 'delivery' ? pinAdjusted : false,
         }),
       })
 
@@ -524,6 +542,33 @@ export default function CheckoutPage() {
                           className="input-field resize-none h-24"
                           required
                         />
+
+                        {showMap && deliveryLat && deliveryLng && (
+                          <div className="space-y-1.5 mt-2">
+                            <label className="font-sans text-[10px] font-bold text-sage uppercase tracking-wider block">
+                              📍 Adjust Drop-off Spot
+                            </label>
+                            <PinMapComponent
+                              latitude={deliveryLat}
+                              longitude={deliveryLng}
+                              onChange={(lat, lng) => {
+                                setDeliveryLat(lat)
+                                setDeliveryLng(lng)
+                                setPinAdjusted(true)
+                                setAddress(prev => {
+                                  const newLink = `📍 GPS Delivery Link: https://maps.google.com/?q=${lat},${lng}\n`
+                                  if (prev.includes('GPS Delivery Link')) {
+                                    return prev.replace(/📍 GPS Delivery Link: https:\/\/maps\.google\.com\/\?q=[-\d.]+,[-\d.]+\n?/, newLink)
+                                  }
+                                  return newLink + prev
+                                })
+                              }}
+                            />
+                            <p className="font-sans text-[9px] text-cocoa-muted italic">
+                              Drag the red pin to mark your exact gate or doorstep. Your driver will see this pin on their live GPS map!
+                            </p>
+                          </div>
+                        )}
                       </motion.div>
                     )}
 

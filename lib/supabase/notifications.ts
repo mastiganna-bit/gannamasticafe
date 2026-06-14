@@ -23,7 +23,7 @@ export async function createOrderStatusNotification(orderId: string, status: str
     // Fetch order details
     const { data: order, error: fetchError } = await supabase
       .from('orders')
-      .select('id, user_id, customer_name, items')
+      .select('id, user_id, customer_name, items, delivery_type')
       .eq('id', orderId)
       .single()
 
@@ -54,8 +54,22 @@ export async function createOrderStatusNotification(orderId: string, status: str
         message = `Hi ${order.customer_name}! Our chef has started preparing your delicious food!`
         break
       case 'completed':
-        title = 'Order Ready! 🍔🥤'
-        message = `Hi ${order.customer_name}! Your order is ready at the counter. Come grab it while it is hot!`
+        if (order.delivery_type === 'delivery') {
+          title = 'Order Prepared! 🍔📦'
+          message = `Hi ${order.customer_name}! Your order is prepared and is being packed for delivery.`
+        } else {
+          title = 'Order Ready! 🍔🥤'
+          message = `Hi ${order.customer_name}! Your order is ready at the counter. Come grab it while it is hot!`
+        }
+        break
+      case 'picked_up':
+      case 'out_for_delivery':
+        title = 'Out for Delivery! 🛵'
+        message = `Hi ${order.customer_name}! Your order has been picked up by our delivery partner and is on the way!`
+        break
+      case 'delivered':
+        title = 'Order Delivered! 🍕🎉'
+        message = `Hi ${order.customer_name}! Your order was delivered successfully. Enjoy your hot food!`
         break
       case 'cancelled':
         title = 'Order Cancelled ❌'

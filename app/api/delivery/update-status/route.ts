@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied: No delivery agent profile found' }, { status: 403 })
     }
 
-    const { orderId, action }: { orderId: string; action: 'accept' | 'pickup' | 'deliver' } = await request.json()
+    const { orderId, action, otp }: { orderId: string; action: 'accept' | 'pickup' | 'deliver'; otp?: string } = await request.json()
 
     if (!orderId || !action) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
@@ -73,6 +74,10 @@ export async function POST(request: NextRequest) {
         .eq('id', orderId)
 
       if (error) throw error
+
+      // Dispatch real-time customer push notification
+      await createOrderStatusNotification(orderId, 'picked_up')
+
       return NextResponse.json({ success: true, message: 'Order picked up' })
     }
 
@@ -84,11 +89,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid state transition' }, { status: 400 })
       }
 
+      if (!otp) {
+        return NextResponse.json({ error: 'Verification OTP is required to deliver this order' }, { status: 400 })
+      }
+
+      if (order.delivery_otp !== otp) {
+        return NextResponse.json({ error: 'Invalid delivery verification OTP. Please ask the customer.' }, { status: 400 })
+      }
+
       const { error } = await adminSupabase
         .from('orders')
         .update({
           delivery_status: 'delivered',
           status: 'completed', // Ensure the main order is completed
+          delivery_otp: null,  // Clear OTP
         })
         .eq('id', orderId)
 
@@ -99,6 +113,9 @@ export async function POST(request: NextRequest) {
         .from('delivery_locations')
         .delete()
         .eq('order_id', orderId)
+
+      // Dispatch real-time customer push notification
+      await createOrderStatusNotification(orderId, 'delivered')
 
       return NextResponse.json({ success: true, message: 'Order delivered' })
     }

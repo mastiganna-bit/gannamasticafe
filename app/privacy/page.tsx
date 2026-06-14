@@ -54,14 +54,21 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section className="space-y-3">
-            <h2 className="font-display text-lg text-cocoa">4. Third-Party Sharing</h2>
+            <h2 className="font-display text-lg text-cocoa">4. Pricing and Catalog Disclaimer</h2>
+            <p>
+              Please note that all menu prices, item descriptions, and packaging fees displayed on our website are subject to change at any time without prior notice. The cafe reserves the right to modify prices and availability of items in real-time as market costs and kitchen prep availability dictate.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="font-display text-lg text-cocoa">5. Third-Party Sharing</h2>
             <p>
               We do not sell, trade, or transfer your personal data to outside parties. This does not include trusted third parties who assist us in operating our website, conducting our business, or delivering food to you (such as delivery staff and payment processors), as long as those parties agree to keep this information confidential.
             </p>
           </section>
 
           <section className="space-y-3">
-            <h2 className="font-display text-lg text-cocoa">5. Contact Us</h2>
+            <h2 className="font-display text-lg text-cocoa">6. Contact Us</h2>
             <p>
               If you have any questions or concerns regarding this Privacy Policy, please reach out to us at:
             </p>

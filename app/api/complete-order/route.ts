@@ -42,10 +42,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // If it is a delivery order, generate a random 6-digit OTP
+    let updateFields: any = { status: 'completed' }
+    if (order.delivery_type === 'delivery') {
+      const deliveryOtp = Math.floor(100000 + Math.random() * 900000).toString()
+      updateFields.delivery_otp = deliveryOtp
+    }
+
     // Update order to completed
     const { error: updateError } = await adminSupabase
       .from('orders')
-      .update({ status: 'completed' })
+      .update(updateFields)
       .eq('id', order_id)
 
     if (updateError) {
