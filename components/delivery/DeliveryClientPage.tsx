@@ -126,6 +126,35 @@ export default function DeliveryClientPage({
           let lastLat = 0
           let lastLng = 0
 
+          // Immediate bootstrap lookup
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              setGpsError(false)
+              const { latitude, longitude, heading, speed } = pos.coords
+              setCurrentDriverCoords({ latitude, longitude })
+              lastLat = latitude
+              lastLng = longitude
+
+              await Promise.allSettled(
+                trackingOrders.map(async (order) => {
+                  await supabase
+                    .from('delivery_locations')
+                    .upsert({
+                      order_id: order.id,
+                      delivery_boy_id: user.id,
+                      latitude,
+                      longitude,
+                      heading: heading || null,
+                      speed: speed || null,
+                      updated_at: new Date().toISOString()
+                    })
+                })
+              )
+            },
+            (err) => console.log('Initial location bootstrap lookup skipped/failed:', err),
+            { enableHighAccuracy: true, timeout: 8000 }
+          )
+
           const id = navigator.geolocation.watchPosition(
             async (pos) => {
               setGpsError(false)

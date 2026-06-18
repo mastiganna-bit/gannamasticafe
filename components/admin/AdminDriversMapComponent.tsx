@@ -16,9 +16,10 @@ interface DriverLocation {
 
 interface AdminDriversMapComponentProps {
   drivers: DriverLocation[]
+  focusDriverId?: string | null
 }
 
-export default function AdminDriversMapComponent({ drivers }: AdminDriversMapComponentProps) {
+export default function AdminDriversMapComponent({ drivers, focusDriverId }: AdminDriversMapComponentProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const markersRef = useRef<Record<string, any>>({})
@@ -27,6 +28,49 @@ export default function AdminDriversMapComponent({ drivers }: AdminDriversMapCom
   // Default Cafe Coordinates (Rohtak location)
   const CAFE_LAT = 28.881093
   const CAFE_LNG = 76.577976
+
+  // Helper to fetch actual road route from OSRM for a driver
+  const fetchRouteAndDrawForDriver = async (L: any, map: any, driverId: string, driverLat: number, driverLng: number, destLat: number, destLng: number) => {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${CAFE_LNG},${CAFE_LAT};${driverLng},${driverLat};${destLng},${destLat}?overview=full&geometries=geojson`
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      if (data && data.routes && data.routes.length > 0) {
+        const routeCoords = data.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])
+        
+        // Remove old route line if exists
+        if (routeLinesRef.current[driverId]) {
+          map.removeLayer(routeLinesRef.current[driverId])
+        }
+        
+        // Draw actual route
+        routeLinesRef.current[driverId] = L.polyline(routeCoords, {
+          color: '#3D6B4F',
+          weight: 3,
+          opacity: 0.8,
+          lineJoin: 'round'
+        }).addTo(map)
+      } else {
+        drawFallbackStraightLine(L, map, driverId, driverLat, driverLng, destLat, destLng)
+      }
+    } catch (e) {
+      console.error('OSRM route fetch failed for driver:', e)
+      drawFallbackStraightLine(L, map, driverId, driverLat, driverLng, destLat, destLng)
+    }
+  }
+
+  const drawFallbackStraightLine = (L: any, map: any, driverId: string, driverLat: number, driverLng: number, destLat: number, destLng: number) => {
+    if (routeLinesRef.current[driverId]) {
+      map.removeLayer(routeLinesRef.current[driverId])
+    }
+    routeLinesRef.current[driverId] = L.polyline([[CAFE_LAT, CAFE_LNG], [driverLat, driverLng], [destLat, destLng]], {
+      color: '#3D6B4F',
+      weight: 3,
+      dashArray: '5, 8',
+      opacity: 0.7
+    }).addTo(map)
+  }
 
   useEffect(() => {
     // Inject Leaflet CSS dynamically if not already loaded
@@ -139,16 +183,7 @@ export default function AdminDriversMapComponent({ drivers }: AdminDriversMapCom
               }
 
               // Update route line
-              if (routeLinesRef.current[key]) {
-                routeLinesRef.current[key].setLatLngs([[CAFE_LAT, CAFE_LNG], driverPos, destPos])
-              } else {
-                routeLinesRef.current[key] = L.polyline([[CAFE_LAT, CAFE_LNG], driverPos, destPos], {
-                  color: '#3D6B4F',
-                  weight: 3,
-                  dashArray: '5, 8',
-                  opacity: 0.7
-                }).addTo(map)
-              }
+              fetchRouteAndDrawForDriver(L, map, key, driver.latitude, driver.longitude, driver.destLat, driver.destLng)
             } else {
               // Remove destination marker & route if no active delivery
               if (markersRef.current[key].destMarker) {
@@ -177,12 +212,7 @@ export default function AdminDriversMapComponent({ drivers }: AdminDriversMapCom
               destMarker = L.marker(destPos, { icon: destIcon }).addTo(map)
               destMarker.bindPopup(`<b>Order for ${driver.customerName}</b><br>${driver.deliveryAddress}`)
 
-              routeLinesRef.current[key] = L.polyline([[CAFE_LAT, CAFE_LNG], driverPos, destPos], {
-                color: '#3D6B4F',
-                weight: 3,
-                dashArray: '5, 8',
-                opacity: 0.7
-              }).addTo(map)
+              fetchRouteAndDrawForDriver(L, map, key, driver.latitude, driver.longitude, driver.destLat, driver.destLng)
             }
 
             markersRef.current[key] = {
@@ -194,6 +224,24 @@ export default function AdminDriversMapComponent({ drivers }: AdminDriversMapCom
       })
     }
   }, [drivers])
+
+  // Focus on selected driver when focusDriverId changes
+  useEffect(() => {
+    if (mapInstanceRef.current && focusDriverId) {
+      const targetDriver = drivers.find(d => d.driverId === focusDriverId)
+      if (targetDriver) {
+        import('leaflet').then((L) => {
+          const map = mapInstanceRef.current
+          map.setView([targetDriver.latitude, targetDriver.longitude], 15, { animate: true })
+          
+          // Open driver's popup
+          if (markersRef.current[focusDriverId]) {
+            markersRef.current[focusDriverId].driverMarker.openPopup()
+          }
+        })
+      }
+    }
+  }, [focusDriverId, drivers])
 
   return (
     <div className="relative w-full h-[400px] rounded-xl overflow-hidden border border-linen shadow-card">

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     for (const item of items) {
       const { data: dbSize, error: sizeError } = await supabase
         .from('menu_item_sizes')
-        .select('price_paise, size_label, menu_items (name, category)')
+        .select('price_paise, size_label, menu_items (name, category, is_available)')
         .eq('id', item.size_id)
         .single()
 
@@ -107,6 +107,11 @@ export async function POST(request: NextRequest) {
       }
 
       const sizeData = dbSize as any
+      const parentItem = sizeData.menu_items
+      if (parentItem && parentItem.is_available === false) {
+        return NextResponse.json({ error: `Sorry, "${parentItem.name}" is currently sold out or unavailable. Please update your cart.` }, { status: 400 })
+      }
+
       let itemPricePaise = sizeData.price_paise
 
       if (item.extra_cheese) {

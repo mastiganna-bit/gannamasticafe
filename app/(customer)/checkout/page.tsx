@@ -223,6 +223,33 @@ export default function CheckoutPage() {
 
     setIsLoading(true)
 
+    // Validate item availability before starting payment flow
+    try {
+      const { data: dbItems, error: stockErr } = await supabase
+        .from('menu_items')
+        .select('id, name, is_available')
+        .in('id', items.map(item => item.menu_item_id))
+
+      if (stockErr) throw stockErr
+
+      const unavailableItems = items.filter(cartItem => {
+        const matched = dbItems?.find(db => db.id === cartItem.menu_item_id)
+        return !matched || !matched.is_available
+      })
+
+      if (unavailableItems.length > 0) {
+        const names = unavailableItems.map(i => i.name).join(', ')
+        toast.error(`Sorry, the following items are currently sold out or hidden: ${names}. Please remove/edit them to proceed.`, { duration: 6000 })
+        setIsLoading(false)
+        return
+      }
+    } catch (err) {
+      console.error('Stock verification error:', err)
+      toast.error('Failed to verify items availability. Please try again.')
+      setIsLoading(false)
+      return
+    }
+
     // Save details to localStorage for next time
     localStorage.setItem('gannamasti_customer_name', name)
     localStorage.setItem('gannamasti_customer_phone', phone)

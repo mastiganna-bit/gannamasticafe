@@ -23,6 +23,7 @@ interface MenuItem {
   description: string | null
   category: string
   image_path: string
+  image_backup?: string | null
   is_available: boolean
   has_sizes: boolean
   menu_item_sizes?: Size[]
@@ -39,6 +40,8 @@ export default function MenuManager() {
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editImagePath, setEditImagePath] = useState('')
+  const [editBackupPath, setEditBackupPath] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [editAvailability, setEditAvailability] = useState(true)
   const [editSizes, setEditSizes] = useState<Size[]>([])
   const [editSinglePrice, setEditSinglePrice] = useState<number>(0) // For items without sizes
@@ -135,6 +138,7 @@ export default function MenuManager() {
     setEditName(item.name)
     setEditDesc(item.description || '')
     setEditImagePath(item.image_path || '')
+    setEditBackupPath(item.image_backup || null)
     setEditAvailability(item.is_available)
     if (item.has_sizes && item.menu_item_sizes) {
       setEditSizes([...item.menu_item_sizes])
@@ -149,6 +153,50 @@ export default function MenuManager() {
 
   const cancelEditing = () => {
     setEditingId(null)
+  }
+
+  // Handle uploading image files and setting state
+  const handleUploadImageFile = async (file: File, forNewItem = false) => {
+    setUploadingImage(true)
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch('/api/admin/upload-image', {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to upload image')
+      }
+
+      if (forNewItem) {
+        setNewItemImagePath(data.url)
+        toast.success('New item image uploaded successfully!')
+      } else {
+        // Backup the current image path
+        if (editImagePath && editImagePath !== data.url) {
+          setEditBackupPath(editImagePath)
+        }
+        setEditImagePath(data.url)
+        toast.success('Image uploaded successfully! Current image staged as backup.')
+      }
+    } catch (err: any) {
+      toast.error('Image upload failed: ' + err.message)
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  const restoreBackupImage = () => {
+    if (editBackupPath) {
+      const temp = editImagePath
+      setEditImagePath(editBackupPath)
+      setEditBackupPath(temp)
+      toast.success('Restored previous image from backup!')
+    }
   }
 
   // Handle price inputs safely
@@ -170,6 +218,9 @@ export default function MenuManager() {
     }
     if (editImagePath !== item.image_path) {
       diffList.push(`Update image: "${item.image_path}" → "${editImagePath}"`)
+      if (editBackupPath) {
+        diffList.push(`Backup current image: "${editBackupPath}"`)
+      }
     }
     if (editAvailability !== item.is_available) {
       diffList.push(`Availability: ${item.is_available ? 'Available' : 'Hidden'} → ${editAvailability ? 'Available' : 'Hidden'}`)
@@ -220,14 +271,21 @@ export default function MenuManager() {
 
     try {
       // 1. Update main menu item details
+      const updatePayload: any = {
+        name: pendingChanges.name,
+        description: pendingChanges.description || null,
+        image_path: pendingChanges.image_path,
+        is_available: pendingChanges.is_available
+      }
+
+      const currentItem = items.find(i => i.id === pendingChanges.itemId)
+      if (currentItem && 'image_backup' in currentItem) {
+        updatePayload.image_backup = editBackupPath || currentItem.image_backup || null
+      }
+
       const { error: itemErr } = await supabase
         .from('menu_items')
-        .update({
-          name: pendingChanges.name,
-          description: pendingChanges.description || null,
-          image_path: pendingChanges.image_path,
-          is_available: pendingChanges.is_available
-        })
+        .update(updatePayload)
         .eq('id', pendingChanges.itemId)
 
       if (itemErr) throw itemErr
@@ -308,16 +366,22 @@ export default function MenuManager() {
     setSavingNewItem(true)
     try {
       // 1. Insert item
+      const insertPayload: any = {
+        name: newItemName,
+        description: newItemDesc || null,
+        category: newItemCategory,
+        image_path: newItemImagePath || '/images/logo.png',
+        is_available: true,
+        has_sizes: newItemHasSizes
+      }
+
+      if (items.length > 0 && 'image_backup' in items[0]) {
+        insertPayload.image_backup = null
+      }
+
       const { data: itemData, error: itemErr } = await supabase
         .from('menu_items')
-        .insert({
-          name: newItemName,
-          description: newItemDesc || null,
-          category: newItemCategory,
-          image_path: newItemImagePath || '/images/logo.png',
-          is_available: true,
-          has_sizes: newItemHasSizes
-        })
+        .insert(insertPayload)
         .select()
         .single()
 
@@ -554,13 +618,95 @@ export default function MenuManager() {
                             </div>
 
                             <div>
-                              <label className="block text-[9px] font-sans font-bold text-cocoa uppercase mb-1">Image Path / URL</label>
-                              <input
-                                type="text"
-                                value={editImagePath}
-                                onChange={e => setEditImagePath(e.target.value)}
-                                className="w-full bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
-                              />
+                              <label className="block text-[9px] font-sans font-bold text-cocoa uppercase mb-2">Product Image</label>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {/* Upload / Preview Box */}
+                                <div className="relative group aspect-video rounded-xl border-2 border-dashed border-linen hover:border-sage transition-all bg-cream flex flex-col items-center justify-center p-3 cursor-pointer overflow-hidden text-center">
+                                  {uploadingImage ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <div className="w-5 h-5 border-2 border-sage/20 border-t-sage rounded-full animate-spin" />
+                                      <span className="text-[9px] text-sage font-bold font-sans">Uploading...</span>
+                                    </div>
+                                  ) : editImagePath ? (
+                                    <>
+                                      <img
+                                        src={editImagePath}
+                                        alt="Preview"
+                                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                      <div className="absolute inset-0 bg-cocoa/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[9px] font-bold font-sans gap-1">
+                                        <Plus size={16} />
+                                        <span>Change Image</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="text-cocoa-muted flex flex-col items-center gap-1">
+                                      <Plus size={18} className="text-sage" />
+                                      <span className="text-[9px] font-bold font-sans uppercase">Upload Image</span>
+                                    </div>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    disabled={uploadingImage}
+                                    onChange={e => {
+                                      const file = e.target.files?.[0]
+                                      if (file) handleUploadImageFile(file, false)
+                                    }}
+                                  />
+                                </div>
+
+                                {/* Backup Box */}
+                                <div className="border border-linen rounded-xl p-3 bg-cream/30 flex flex-col justify-between text-[10px]">
+                                  {editBackupPath ? (
+                                    <div className="flex flex-col justify-between h-full gap-2">
+                                      <div>
+                                        <span className="text-[8px] font-bold text-cocoa-muted uppercase block">Backup History</span>
+                                        <div className="flex items-center gap-2 mt-1.5">
+                                          <div className="w-8 h-8 rounded-lg bg-cream border border-linen overflow-hidden relative shrink-0">
+                                            <img src={editBackupPath} className="w-full h-full object-cover" alt="Backup" />
+                                          </div>
+                                          <span className="text-[9px] text-cocoa truncate max-w-[100px]" title={editBackupPath}>
+                                            {editBackupPath.split('/').pop()}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={restoreBackupImage}
+                                        className="w-full bg-white hover:bg-sage/10 text-sage border border-sage/20 hover:border-sage font-bold font-sans py-1.5 px-2.5 rounded-lg transition-all text-[9px] flex items-center justify-center gap-1"
+                                      >
+                                        🔄 Restore Backup
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-center text-cocoa-muted py-2">
+                                      <span className="text-[9px] italic">No backup image available</span>
+                                      <p className="text-[8px] mt-1 leading-normal text-cocoa-muted/70">
+                                        Uploading a new image will automatically archive the current one.
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Manual URL entry field for power-users */}
+                              <div className="mt-2.5">
+                                <label className="block text-[8px] font-sans font-bold text-cocoa-muted uppercase mb-1">Or edit image path/URL manually</label>
+                                <input
+                                  type="text"
+                                  value={editImagePath}
+                                  onChange={e => setEditImagePath(e.target.value)}
+                                  className="w-full bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                                />
+                              </div>
+
+                              {items.length > 0 && !('image_backup' in items[0]) && (
+                                <p className="mt-1.5 text-[8px] text-amber-cafe font-sans leading-normal">
+                                  ⚠️ Run the SQL migration `add_image_backup.sql` to save backup images.
+                                </p>
+                              )}
                             </div>
 
                             <div className="flex items-center justify-between py-1">
@@ -834,14 +980,57 @@ export default function MenuManager() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1">Image URL or Local Path</label>
-                    <input
-                      type="text"
-                      value={newItemImagePath}
-                      onChange={e => setNewItemImagePath(e.target.value)}
-                      placeholder="e.g. /images/special-pizza.png"
-                      className="w-full bg-cream border border-linen rounded-lg p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
-                    />
+                    <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1.5">Product Image</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Upload Box */}
+                      <div className="relative group aspect-video rounded-xl border-2 border-dashed border-linen hover:border-sage transition-all bg-cream flex flex-col items-center justify-center p-3 cursor-pointer overflow-hidden text-center">
+                        {uploadingImage ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-5 h-5 border-2 border-sage/20 border-t-sage rounded-full animate-spin" />
+                            <span className="text-[9px] text-sage font-bold font-sans">Uploading...</span>
+                          </div>
+                        ) : newItemImagePath ? (
+                          <>
+                            <img
+                              src={newItemImagePath}
+                              alt="Preview"
+                              className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-cocoa/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[9px] font-bold font-sans gap-1">
+                              <Plus size={16} />
+                              <span>Change Image</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-cocoa-muted flex flex-col items-center gap-1">
+                            <Plus size={18} className="text-sage" />
+                            <span className="text-[9px] font-bold font-sans uppercase">Upload Image</span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          disabled={uploadingImage}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) handleUploadImageFile(file, true)
+                          }}
+                        />
+                      </div>
+
+                      {/* Manual Entry box */}
+                      <div className="border border-linen rounded-xl p-3 bg-cream/30 flex flex-col justify-center text-[10px]">
+                        <span className="text-[8px] font-bold text-cocoa-muted uppercase block mb-1.5">Or enter URL manually</span>
+                        <input
+                          type="text"
+                          value={newItemImagePath}
+                          onChange={e => setNewItemImagePath(e.target.value)}
+                          placeholder="e.g. /images/special-pizza.png"
+                          className="w-full bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 

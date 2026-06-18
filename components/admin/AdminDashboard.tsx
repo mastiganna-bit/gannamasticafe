@@ -69,6 +69,8 @@ export default function AdminDashboard({
   const [dashboardTab, setDashboardTab] = useState<'orders' | 'history' | 'menu' | 'drivers'>('orders')
   const [deliveryProfiles, setDeliveryProfiles] = useState<any[]>([])
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
+  const [focusDriverId, setFocusDriverId] = useState<string | null>(null)
+  const mapContainerRef = useRef<HTMLDivElement>(null)
   const [cheesePrices, setCheesePrices] = useState({
     standard: 2000,
     premiumPizzaSmall: 3000,
@@ -125,18 +127,29 @@ export default function AdminDashboard({
     return discount
   }
 
-  const getOrderCardStyle = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'border-sage/40 bg-sage/5 hover:border-sage shadow-card-hover'
+  const getOrderCardStyle = (order: Order) => {
+    const isFullyDone = order.status === 'completed' && (order.delivery_type !== 'delivery' || order.delivery_status === 'delivered')
+    const isReadyAwaitingDelivery = order.status === 'completed' && order.delivery_type === 'delivery' && order.delivery_status !== 'delivered'
+    
+    if (isFullyDone) {
+      // Completed & Delivered -> Soft pastel rose/red
+      return 'border-rose-300 bg-rose-50/90 text-rose-900 shadow-sm hover:border-rose-400 opacity-90'
+    }
+    
+    if (isReadyAwaitingDelivery) {
+      // Prepared/Ready, but out for delivery/assigned -> Soft pastel purple/indigo
+      return 'border-indigo-200 bg-indigo-50/70 text-indigo-900 shadow-sm hover:border-indigo-300'
+    }
+
+    switch (order.status) {
       case 'preparing':
-        return 'border-amber-cafe/40 bg-amber-50/10 hover:border-amber-cafe shadow-card-hover'
+        return 'border-amber-200 bg-amber-50/70 text-amber-900 shadow-sm hover:border-amber-300'
       case 'paid':
-        return 'border-blue-300 bg-blue-50/5 hover:border-blue-400 shadow-card-hover'
+        return 'border-blue-200 bg-blue-50/70 text-blue-900 shadow-sm hover:border-blue-300'
       case 'cancelled':
-        return 'border-red-300 bg-red-50/5 hover:border-red-400 opacity-60'
+        return 'border-slate-200 bg-slate-50/50 text-slate-800 opacity-60'
       default:
-        return 'border-linen bg-white hover:border-linen-dark'
+        return 'border-linen bg-white text-cocoa hover:border-linen-dark shadow-sm'
     }
   }
 
@@ -305,17 +318,62 @@ export default function AdminDashboard({
     return () => clearTimeout(delayDebounceFn)
   }, [dashboardTab, statusFilter, searchTerm, supabase])
 
+  // Synthesizes a beautiful bell chime using Web Audio API as a robust zero-asset fallback
+  const playWebAudioChime = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioContext) return
+      const ctx = new AudioContext()
+      const now = ctx.currentTime
+      
+      const playTone = (freq: number, start: number, duration: number) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'triangle'
+        osc.frequency.setValueAtTime(freq, start)
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.98, start + duration)
+        
+        gain.gain.setValueAtTime(0, start)
+        gain.gain.linearRampToValueAtTime(0.3, start + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+        
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(start)
+        osc.stop(start + duration)
+      }
+      
+      // Beautiful double chime: G5 (783.99 Hz) then C6 (1046.50 Hz)
+      playTone(783.99, now, 0.8)
+      playTone(1046.50, now + 0.15, 1.2)
+    } catch (e) {
+      console.error('Synthesized chime failed:', e)
+    }
+  }
+
   // Ring sound chime alert
   const playNewOrderSound = () => {
     const audio = new Audio('/sounds/new-order.mp3')
     audio.play().catch((err) => {
-      console.log('Admin sound autoplay blocked by browser context.', err)
+      console.log('Admin sound audio asset play failed, using Web Audio fallback:', err)
+      playWebAudioChime()
     })
   }
 
   // Pre-stage audio permission unlock
   const toggleAdminSound = () => {
     if (!adminSoundEnabled) {
+      // Warm up Web Audio context
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+        if (AudioContext) {
+          const ctx = new AudioContext()
+          if (ctx.state === 'suspended') {
+            ctx.resume()
+          }
+        }
+      } catch (e) {}
+
       const audio = new Audio('/sounds/new-order.mp3')
       audio.play().then(() => {
         audio.pause()
@@ -323,6 +381,8 @@ export default function AdminDashboard({
         setAdminSoundEnabled(true)
         toast.success('Live kitchen audio alerts enabled!', { icon: '🔊' })
       }).catch(() => {
+        // Fallback tone play to verify user can hear it
+        playWebAudioChime()
         setAdminSoundEnabled(true)
         toast.success('Sound enabled! Keep tab focused for chimes.', { icon: '🔊' })
       })
@@ -351,15 +411,20 @@ export default function AdminDashboard({
         (payload) => {
           const newOrder = payload.new as Order
           if (newOrder.status === 'paid') {
-            setOrders((prev) => [newOrder, ...prev])
-            toast.success(`New order from ${newOrder.customer_name}!`, {
-              duration: 8000,
-              icon: '🍔'
+            setOrders((prev) => {
+              const exists = prev.some((o) => o.id === newOrder.id)
+              if (!exists) {
+                toast.success(`New order from ${newOrder.customer_name}!`, {
+                  duration: 8000,
+                  icon: '🍔'
+                })
+                if (soundEnabledRef.current) {
+                  playNewOrderSound()
+                }
+                return [newOrder, ...prev]
+              }
+              return prev
             })
-            // Trigger auditory kitchen chime if enabled
-            if (soundEnabledRef.current) {
-              playNewOrderSound()
-            }
           }
         }
       )
@@ -375,8 +440,20 @@ export default function AdminDashboard({
 
           if (isToday) {
             setOrders((prev) => {
-              const exists = prev.some((o) => o.id === updated.id)
-              if (exists) {
+              const existingOrder = prev.find((o) => o.id === updated.id)
+              const statusChangedToPaid = (!existingOrder || existingOrder.status !== 'paid') && updated.status === 'paid'
+
+              if (statusChangedToPaid) {
+                toast.success(`New paid order from ${updated.customer_name}!`, {
+                  duration: 8000,
+                  icon: '🍔'
+                })
+                if (soundEnabledRef.current) {
+                  playNewOrderSound()
+                }
+              }
+
+              if (existingOrder) {
                 return prev.map((o) => (o.id === updated.id ? updated : o))
               } else {
                 return [updated, ...prev]
@@ -478,6 +555,7 @@ export default function AdminDashboard({
   const getPrepSummary = () => {
     const summary: { [key: string]: number } = {}
     orders.forEach((o) => {
+      if (o.status === 'completed' || o.status === 'cancelled') return
       const items = o.items as any[]
       items.forEach((item) => {
         const key = `${item.name} (${item.size_label})`
@@ -662,7 +740,7 @@ export default function AdminDashboard({
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
-                    className={`border-2 rounded-xl2 p-5 flex flex-col justify-between transition-all duration-300 cursor-pointer ${getOrderCardStyle(order.status)}`}
+                    className={`border-2 rounded-xl2 p-5 flex flex-col justify-between transition-all duration-300 cursor-pointer ${getOrderCardStyle(order)}`}
                   >
                     <div>
                       {/* Order Header */}
@@ -673,16 +751,20 @@ export default function AdminDashboard({
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           <span className={`inline-flex items-center gap-1 text-[10px] font-sans font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                            order.status === 'preparing'
-                              ? 'bg-amber-pale text-amber-cafe border border-amber-cafe/15'
+                            order.status === 'completed' && order.delivery_status === 'delivered'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
                               : order.status === 'completed'
-                              ? 'bg-sage/20 text-sage-dark border border-sage-dark/15'
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                              : order.status === 'preparing'
+                              ? 'bg-amber-100 text-amber-805 border border-amber-200'
                               : order.status === 'cancelled'
-                              ? 'bg-red-50 text-red-600 border border-red-200'
-                              : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                              : 'bg-blue-100 text-blue-800 border border-blue-200'
                           }`}>
                             {order.status === 'preparing' ? (
                               <><ChefHat size={10} /> Preparing</>
+                            ) : order.status === 'completed' && order.delivery_status === 'delivered' ? (
+                              <><CheckCircle size={10} /> Delivered</>
                             ) : order.status === 'completed' ? (
                               <><CheckCircle size={10} /> Ready/Done</>
                             ) : order.status === 'cancelled' ? (
@@ -1210,9 +1292,10 @@ export default function AdminDashboard({
           </div>
 
           {/* Live Map */}
-          <div className="bg-white border border-linen rounded-xl2 p-5 shadow-card">
+          <div ref={mapContainerRef} className="bg-white border border-linen rounded-xl2 p-5 shadow-card">
             <h3 className="font-display text-lg text-cocoa mb-3">Live Fleet Location Map</h3>
             <AdminDriversMapComponent
+              focusDriverId={focusDriverId}
               drivers={(() => {
                 const list: any[] = []
                 const processed = new Set<string>()
@@ -1270,9 +1353,23 @@ export default function AdminDashboard({
                     o => o.delivery_boy_id === profile.user_id && o.delivery_type === 'delivery' && o.delivery_status !== 'delivered'
                   )
                   const hasLiveLocation = activeAssignment && driverLocations[activeAssignment.id]
+                  const isFocused = focusDriverId === profile.user_id
 
                   return (
-                    <div key={profile.user_id} className="border border-linen rounded-xl p-4 bg-cream/10 space-y-3 shadow-sm">
+                    <div
+                      key={profile.user_id}
+                      onClick={() => {
+                        setFocusDriverId(isFocused ? null : profile.user_id)
+                        if (!isFocused) {
+                          mapContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                        }
+                      }}
+                      className={`border rounded-xl p-4 transition-all cursor-pointer space-y-3 shadow-sm ${
+                        isFocused
+                          ? 'border-sage bg-sage/5 ring-2 ring-sage/20'
+                          : 'border-linen bg-cream/10 hover:border-linen-dark'
+                      }`}
+                    >
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-sans font-bold text-cocoa">{profile.full_name}</h4>

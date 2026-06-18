@@ -21,6 +21,48 @@ export default function DriverRouteMapComponent({
   const destMarkerRef = useRef<any>(null)
   const routeLineRef = useRef<any>(null)
 
+  // Helper to fetch actual road route from OSRM
+  const fetchRouteAndDraw = async (L: any, map: any, fromLat: number, fromLng: number, toLat: number, toLng: number) => {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      if (data && data.routes && data.routes.length > 0) {
+        const routeCoords = data.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])
+        
+        // Remove old route line if exists
+        if (routeLineRef.current) {
+          map.removeLayer(routeLineRef.current)
+        }
+        
+        // Draw actual route
+        routeLineRef.current = L.polyline(routeCoords, {
+          color: '#3D6B4F',
+          weight: 4,
+          opacity: 0.8,
+          lineJoin: 'round'
+        }).addTo(map)
+      } else {
+        drawFallbackStraightLine(L, map, fromLat, fromLng, toLat, toLng)
+      }
+    } catch (e) {
+      console.error('OSRM route fetch failed, using straight line:', e)
+      drawFallbackStraightLine(L, map, fromLat, fromLng, toLat, toLng)
+    }
+  }
+
+  const drawFallbackStraightLine = (L: any, map: any, fromLat: number, fromLng: number, toLat: number, toLng: number) => {
+    if (routeLineRef.current) {
+      map.removeLayer(routeLineRef.current)
+    }
+    routeLineRef.current = L.polyline([[fromLat, fromLng], [toLat, toLng]], {
+      color: '#3D6B4F',
+      weight: 4,
+      dashArray: '5, 10'
+    }).addTo(map)
+  }
+
   useEffect(() => {
     // Inject Leaflet CSS dynamically if not already loaded
     const linkId = 'leaflet-css'
@@ -73,12 +115,7 @@ export default function DriverRouteMapComponent({
           const driverMarker = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(map)
           driverMarkerRef.current = driverMarker
 
-          const routeLine = L.polyline([[driverLat, driverLng], [destLat, destLng]], {
-            color: '#3D6B4F',
-            weight: 4,
-            dashArray: '5, 10'
-          }).addTo(map)
-          routeLineRef.current = routeLine
+          fetchRouteAndDraw(L, map, driverLat, driverLng, destLat, destLng)
 
           const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])
           map.fitBounds(bounds, { padding: [30, 30] })
@@ -123,15 +160,7 @@ export default function DriverRouteMapComponent({
             driverMarkerRef.current = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(map)
           }
 
-          if (routeLineRef.current) {
-            routeLineRef.current.setLatLngs([[driverLat, driverLng], [destLat, destLng]])
-          } else {
-            routeLineRef.current = L.polyline([[driverLat, driverLng], [destLat, destLng]], {
-              color: '#3D6B4F',
-              weight: 4,
-              dashArray: '5, 10'
-            }).addTo(map)
-          }
+          fetchRouteAndDraw(L, map, driverLat, driverLng, destLat, destLng)
 
           // Fit bounds
           const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])

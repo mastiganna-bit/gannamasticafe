@@ -75,7 +75,7 @@ export default function AccountClientPage({
   // Subscribe to real-time driver coordinates for out-for-delivery orders
   useEffect(() => {
     const activeDeliveryOrders = orders.filter(
-      (o: any) => o.delivery_type === 'delivery' && o.delivery_status === 'picked_up' && ['preparing', 'completed'].includes(o.status)
+      (o: any) => o.delivery_type === 'delivery' && ['assigned', 'picked_up'].includes(o.delivery_status) && ['paid', 'preparing', 'completed'].includes(o.status)
     )
 
     if (activeDeliveryOrders.length === 0) return
@@ -172,6 +172,38 @@ export default function AccountClientPage({
       }
     }
 
+    // Synthesizes a beautiful bell chime using Web Audio API as a robust zero-asset fallback
+    const playWebAudioChime = () => {
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+        if (!AudioContext) return
+        const ctx = new AudioContext()
+        const now = ctx.currentTime
+        
+        const playTone = (freq: number, start: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.type = 'triangle'
+          osc.frequency.setValueAtTime(freq, start)
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.98, start + duration)
+          
+          gain.gain.setValueAtTime(0, start)
+          gain.gain.linearRampToValueAtTime(0.3, start + 0.02)
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+          
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.start(start)
+          osc.stop(start + duration)
+        }
+        
+        // Soft single high ping: E6 (1318.51 Hz)
+        playTone(1318.51, now, 1.0)
+      } catch (e) {
+        console.error('Synthesized chime failed:', e)
+      }
+    }
+
     // 2. Pre-stage chime context
     const audio = new Audio('/sounds/cafe-chime.mp3')
     audio.play().then(() => {
@@ -186,8 +218,10 @@ export default function AccountClientPage({
       toast.success('System alerts and audio chimes unlocked!', { icon: '🔊' })
       setIsTestingAlerts(false)
     }).catch((err) => {
-      console.log('Audio autoplay blocked or file missing (404), falling back to Voice Synthesis:', err)
+      console.log('Audio autoplay blocked or file missing (404), falling back to Voice Synthesis & Web Audio:', err)
       
+      // Play fallback chime
+      playWebAudioChime()
       // Fallback voice synthesis test
       speakText('Voice alerts are active!')
       setAudioElement(audio)
@@ -199,12 +233,45 @@ export default function AccountClientPage({
 
   // Multi-tier ready alerts (chime, speech, native banner, tab title flashing)
   const triggerReadyAlert = (order: Order) => {
+    // Helper to synthesize chime
+    const playWebAudioChime = () => {
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+        if (!AudioContext) return
+        const ctx = new AudioContext()
+        const now = ctx.currentTime
+        
+        const playTone = (freq: number, start: number, duration: number) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.type = 'triangle'
+          osc.frequency.setValueAtTime(freq, start)
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.98, start + duration)
+          
+          gain.gain.setValueAtTime(0, start)
+          gain.gain.linearRampToValueAtTime(0.3, start + 0.02)
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+          
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.start(start)
+          osc.stop(start + duration)
+        }
+        playTone(1318.51, now, 1.0)
+      } catch (e) {}
+    }
+
     // 1. Auditory Chime (Mobile pocket alerts)
     if (audioElement) {
-      audioElement.play().catch((err) => console.log('Audio autoplay blocked by system:', err))
+      audioElement.play().catch((err) => {
+        console.log('Audio autoplay blocked by system:', err)
+        playWebAudioChime()
+      })
     } else {
       const fallbackAudio = new Audio('/sounds/cafe-chime.mp3')
-      fallbackAudio.play().catch(() => {})
+      fallbackAudio.play().catch(() => {
+        playWebAudioChime()
+      })
     }
 
     const isDelivery = order.delivery_type === 'delivery'
@@ -798,53 +865,68 @@ export default function AccountClientPage({
                                     <span>Waiting for a delivery partner to accept your order...</span>
                                   </div>
                                 )}
-                                {order.delivery_status === 'assigned' && (
-                                  <div className="bg-sage/10 text-sage border border-sage/20 p-2.5 rounded-xl flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 bg-sage rounded-full animate-pulse" />
-                                    <span>Delivery partner assigned. Preparing for dispatch.</span>
-                                  </div>
-                                )}
-                                {order.delivery_status === 'picked_up' && (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-sans text-xs font-bold text-sage flex items-center gap-1.5">
-                                        <span className="w-2 h-2 bg-sage rounded-full animate-ping" />
-                                        Live Order Tracking
-                                      </span>
-                                      <span className="font-sans text-[10px] text-cocoa-muted">Scooter is on the way</span>
-                                    </div>
+                                {order.delivery_status && ['assigned', 'picked_up'].includes(order.delivery_status) && (
+                                   <div className="space-y-3">
+                                     <div className="flex items-center justify-between border-b border-linen/30 pb-2">
+                                       <span className="font-sans text-xs font-bold text-sage flex items-center gap-1.5">
+                                         <span className="w-2 h-2 bg-sage rounded-full animate-ping" />
+                                         {order.delivery_status === 'picked_up' ? 'Live Order Tracking' : 'Delivery Partner Assigned'}
+                                       </span>
+                                       <span className="font-sans text-[10px] text-cocoa-muted font-medium">
+                                         {order.delivery_status === 'picked_up' ? 'Scooter is on the way' : 'Preparing for dispatch'}
+                                       </span>
+                                     </div>
+                                     {/* Map and Route Status */}
+                                     {(() => {
+                                       const driverCoords = driverLocations[order.id] || { latitude: 28.881093, longitude: 76.577976 }
+                                       const dLat = driverCoords.latitude
+                                       const dLng = driverCoords.longitude
+                                       const cLat = (() => {
+                                         let lat = order.delivery_lat ? Number(order.delivery_lat) : null
+                                         if (!lat) {
+                                           const match = order.delivery_address?.match(/q=([-\d.]+),([-\d.]+)/)
+                                           if (match) lat = parseFloat(match[1])
+                                         }
+                                         return lat
+                                       })()
+                                       const cLng = (() => {
+                                         let lng = order.delivery_lng ? Number(order.delivery_lng) : null
+                                         if (!lng) {
+                                           const match = order.delivery_address?.match(/q=([-\d.]+),([-\d.]+)/)
+                                           if (match) lng = parseFloat(match[2])
+                                         }
+                                         return lng
+                                       })()
 
-                                    {/* Estimated Arrival / Distance */}
-                                    {driverLocations[order.id] && (() => {
-                                      const dLat = driverLocations[order.id].latitude
-                                      const dLng = driverLocations[order.id].longitude
-                                      const cLat = Number(order.delivery_lat)
-                                      const cLng = Number(order.delivery_lng)
-                                      if (cLat && cLng) {
-                                        const dist = calculateDistance(dLat, dLng, cLat, cLng)
-                                        const mins = Math.max(1, Math.round(dist * 2.4 + 3))
-                                        return (
-                                          <div className="bg-sage/15 text-sage-dark border border-sage/20 px-3 py-2 rounded-xl flex items-center justify-between text-xs">
-                                            <span className="font-semibold">🛵 Live Delivery Partner Status:</span>
-                                            <span className="font-bold">{mins} mins ({dist.toFixed(1)} km away)</span>
-                                          </div>
-                                        )
-                                      }
-                                      return null
-                                    })()}
+                                       const dist = (cLat && cLng) ? calculateDistance(dLat, dLng, cLat, cLng) : 0
+                                       const mins = Math.max(1, Math.round(dist * 2.4 + 3))
 
-                                    {driverLocations[order.id] ? (
-                                      <MapComponent 
-                                        latitude={driverLocations[order.id].latitude} 
-                                        longitude={driverLocations[order.id].longitude} 
-                                      />
-                                    ) : (
-                                      <div className="bg-cream p-4 rounded-xl border border-linen text-center text-[11px] text-cocoa-muted">
-                                        Waiting for driver's GPS coordinates...
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                       return (
+                                         <div className="space-y-3">
+                                           {cLat && cLng && (
+                                             <div className="bg-sage/15 text-sage-dark border border-sage/20 px-3 py-2 rounded-xl flex items-center justify-between text-xs">
+                                               <span className="font-semibold font-sans">
+                                                 {driverLocations[order.id] ? '🛵 Live Delivery Partner Status:' : '⏳ Assigning Driver / Preparing Order:'}
+                                               </span>
+                                               <span className="font-bold font-sans">
+                                                 {driverLocations[order.id] ? `${mins} mins (${dist.toFixed(1)} km away)` : 'Awaiting GPS stream...'}
+                                               </span>
+                                             </div>
+                                           )}
+
+                                           <MapComponent 
+                                             latitude={dLat} 
+                                             longitude={dLng}
+                                             destLat={cLat}
+                                             destLng={cLng}
+                                             customerName={order.customer_name}
+                                             deliveryAddress={order.delivery_address || ''}
+                                           />
+                                         </div>
+                                       )
+                                     })()}
+                                   </div>
+                                 )}
                               </div>
                             )}
 
