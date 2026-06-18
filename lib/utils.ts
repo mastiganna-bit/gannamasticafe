@@ -17,6 +17,8 @@ export function generateReceiptId(): string {
   return `GNMST_${Date.now()}_${Math.random().toString(36).substr(2, 9).toUpperCase()}`
 }
 
+import React from 'react'
+
 export function isExtraCheeseEligible(category: string): boolean {
   const eligibleCategories = [
     'Premium Loaded Pizza',
@@ -28,7 +30,19 @@ export function isExtraCheeseEligible(category: string): boolean {
   return eligibleCategories.includes(category)
 }
 
-export function getExtraCheesePrice(category: string, sizeLabel: string, itemName?: string): number {
+export function getExtraCheesePrice(
+  category: string,
+  sizeLabel: string,
+  itemName?: string,
+  dynamicPrices?: { standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number }
+): number {
+  const prices = dynamicPrices || {
+    standard: 2000,
+    premiumPizzaSmall: 3000,
+    premiumPizzaOther: 5000,
+    specialItem: 3000
+  }
+
   if (itemName) {
     const name = itemName.toLowerCase().trim()
     if (
@@ -36,7 +50,7 @@ export function getExtraCheesePrice(category: string, sizeLabel: string, itemNam
       name.includes('gannamasti spl') ||
       name.includes('gannamasti special')
     ) {
-      return 3000 // ₹30 flat in paise
+      return prices.specialItem
     }
   }
 
@@ -46,13 +60,27 @@ export function getExtraCheesePrice(category: string, sizeLabel: string, itemNam
 
   if (category === 'Premium Loaded Pizza') {
     if (normalizedSize === 'small' || normalizedSize === 'half') {
-      return 3000
+      return prices.premiumPizzaSmall
     }
-    return 5000
+    return prices.premiumPizzaOther
   } else {
     if (normalizedSize === 'small' || normalizedSize === 'half' || normalizedSize === 'regular') {
-      return 2000
+      return prices.standard
     }
-    return 3000
+    return prices.premiumPizzaSmall
   }
 }
+
+// Parse address text and identify Google Maps links or other URLs
+export function parseAddressText(text: string | null | undefined): { content: string; isUrl: boolean }[] {
+  if (!text) return []
+  
+  const urlRegex = /(https?:\/\/[^\s]+)/g
+  const parts = text.split(urlRegex)
+  
+  return parts.map((part) => ({
+    content: part,
+    isUrl: !!part.match(urlRegex)
+  }))
+}
+

@@ -349,3 +349,86 @@ insert into public.menu_item_sizes (menu_item_id, size_label, price_paise, sort_
 ('11111111-1111-1111-1111-111111111076', 'Regular', 8000, 1),
 ('11111111-1111-1111-1111-111111111077', 'Regular', 8000, 1),
 ('11111111-1111-1111-1111-111111111078', 'Regular', 8000, 1);
+
+-- Create push_subscriptions Table for Web Push Notifications
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  keys_auth TEXT NOT NULL,
+  keys_p256dh TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can manage their own subscriptions
+CREATE POLICY "Users can manage their own subscriptions"
+  ON push_subscriptions
+  FOR ALL
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Create index on user_id for faster lookups when sending notifications
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_id_idx ON push_subscriptions (user_id);
+
+-- Extend orders table to support delivery types and assignments
+ALTER TABLE orders 
+  ADD COLUMN IF NOT EXISTS delivery_type TEXT DEFAULT 'takeaway' CHECK (delivery_type IN ('dine_in', 'takeaway', 'delivery')),
+  ADD COLUMN IF NOT EXISTS delivery_status TEXT DEFAULT 'unassigned' CHECK (delivery_status IN ('unassigned', 'assigned', 'picked_up', 'delivered')),
+  ADD COLUMN IF NOT EXISTS delivery_boy_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS delivery_address TEXT,
+  ADD COLUMN IF NOT EXISTS delivery_notes TEXT;
+
+-- Create a delivery boy status profile table
+CREATE TABLE IF NOT EXISTS delivery_profiles (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  vehicle_number TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS for delivery_profiles
+ALTER TABLE delivery_profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view active delivery profiles"
+  ON delivery_profiles FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Users can manage their own delivery profile"
+  ON delivery_profiles FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Create a real-time GPS coordinates stream table
+CREATE TABLE IF NOT EXISTS delivery_locations (
+  order_id UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+  delivery_boy_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  latitude NUMERIC(10, 8) NOT NULL,
+  longitude NUMERIC(11, 8) NOT NULL,
+  heading NUMERIC(5, 2),
+  speed NUMERIC(5, 2),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS for delivery_locations
+ALTER TABLE delivery_locations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Assigned drivers can upsert their location"
+  ON delivery_locations FOR ALL TO authenticated 
+  USING (auth.uid() = delivery_boy_id)
+  WITH CHECK (auth.uid() = delivery_boy_id);
+
+CREATE POLICY "Customers can view driver locations for their orders"
+  ON delivery_locations FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM orders 
+      WHERE orders.id = delivery_locations.order_id 
+        AND orders.user_id = auth.uid()
+    )
+  );
+
+-- Create index on delivery_boy_id for location updates
+CREATE INDEX IF NOT EXISTS delivery_locations_driver_idx ON delivery_locations (delivery_boy_id);

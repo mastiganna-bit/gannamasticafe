@@ -3,8 +3,8 @@
 import { useEffect, useRef } from 'react'
 
 interface DriverRouteMapComponentProps {
-  driverLat: number
-  driverLng: number
+  driverLat: number | null
+  driverLng: number | null
   destLat: number
   destLng: number
 }
@@ -38,7 +38,9 @@ export default function DriverRouteMapComponent({
 
       // Initialize map instance if not already done
       if (!mapInstanceRef.current) {
-        const map = L.map(mapRef.current)
+        const centerLat = driverLat || destLat
+        const centerLng = driverLng || destLng
+        const map = L.map(mapRef.current).setView([centerLat, centerLng], 15)
         mapInstanceRef.current = map
 
         // Use Google Maps road tiles for landmarks
@@ -48,14 +50,6 @@ export default function DriverRouteMapComponent({
           attribution: '© Google Maps'
         }).addTo(map)
 
-        // Driver scooter icon
-        const driverIcon = L.divIcon({
-          html: `<div style="background-color: #3D6B4F; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 14px;">🛵</div>`,
-          className: 'custom-div-icon',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14]
-        })
-
         // Destination drop-off icon
         const destIcon = L.divIcon({
           html: `<div style="background-color: #D25C37; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 14px;">📍</div>`,
@@ -64,24 +58,34 @@ export default function DriverRouteMapComponent({
           iconAnchor: [14, 28]
         })
 
-        // Add markers and polyline
-        const driverMarker = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(map)
         const destMarker = L.marker([destLat, destLng], { icon: destIcon }).addTo(map)
-        
-        // Draw route line
-        const routeLine = L.polyline([[driverLat, driverLng], [destLat, destLng]], {
-          color: '#3D6B4F',
-          weight: 4,
-          dashArray: '5, 10'
-        }).addTo(map)
-
-        driverMarkerRef.current = driverMarker
         destMarkerRef.current = destMarker
-        routeLineRef.current = routeLine
 
-        // Fit map bounds to encompass both points
-        const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])
-        map.fitBounds(bounds, { padding: [30, 30] })
+        // Add driver marker if available
+        if (driverLat !== null && driverLng !== null) {
+          const driverIcon = L.divIcon({
+            html: `<div style="background-color: #3D6B4F; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 14px;">🛵</div>`,
+            className: 'custom-div-icon',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+          })
+
+          const driverMarker = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(map)
+          driverMarkerRef.current = driverMarker
+
+          const routeLine = L.polyline([[driverLat, driverLng], [destLat, destLng]], {
+            color: '#3D6B4F',
+            weight: 4,
+            dashArray: '5, 10'
+          }).addTo(map)
+          routeLineRef.current = routeLine
+
+          const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])
+          map.fitBounds(bounds, { padding: [30, 30] })
+        } else {
+          // Just center on destination
+          map.setView([destLat, destLng], 16)
+        }
       }
     })
 
@@ -102,19 +106,40 @@ export default function DriverRouteMapComponent({
       import('leaflet').then((L) => {
         const map = mapInstanceRef.current
         
-        if (driverMarkerRef.current) {
-          driverMarkerRef.current.setLatLng([driverLat, driverLng])
-        }
         if (destMarkerRef.current) {
           destMarkerRef.current.setLatLng([destLat, destLng])
         }
-        if (routeLineRef.current) {
-          routeLineRef.current.setLatLngs([[driverLat, driverLng], [destLat, destLng]])
-        }
 
-        // Fit map bounds on updates
-        const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])
-        map.fitBounds(bounds, { padding: [30, 30] })
+        if (driverLat !== null && driverLng !== null) {
+          if (driverMarkerRef.current) {
+            driverMarkerRef.current.setLatLng([driverLat, driverLng])
+          } else {
+            const driverIcon = L.divIcon({
+              html: `<div style="background-color: #3D6B4F; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); font-size: 14px;">🛵</div>`,
+              className: 'custom-div-icon',
+              iconSize: [28, 28],
+              iconAnchor: [14, 14]
+            })
+            driverMarkerRef.current = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(map)
+          }
+
+          if (routeLineRef.current) {
+            routeLineRef.current.setLatLngs([[driverLat, driverLng], [destLat, destLng]])
+          } else {
+            routeLineRef.current = L.polyline([[driverLat, driverLng], [destLat, destLng]], {
+              color: '#3D6B4F',
+              weight: 4,
+              dashArray: '5, 10'
+            }).addTo(map)
+          }
+
+          // Fit bounds
+          const bounds = L.latLngBounds([[driverLat, driverLng], [destLat, destLng]])
+          map.fitBounds(bounds, { padding: [30, 30] })
+        } else {
+          // No driver coordinates, just center on destination
+          map.panTo([destLat, destLng])
+        }
       })
     }
   }, [driverLat, driverLng, destLat, destLng])

@@ -610,32 +610,65 @@ export default function DeliveryClientPage({
                       </div>
 
                       {/* Inline Route Map for Driver */}
-                      {currentDriverCoords && order.delivery_lat && order.delivery_lng && (
-                        <div className="my-3 overflow-hidden rounded-xl border border-linen bg-cream/35">
-                          <div className="bg-sage/10 text-sage font-sans font-bold text-[10px] px-3 py-1 border-b border-linen uppercase tracking-wider flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-sage rounded-full animate-ping" />
-                            🗺️ In-App Route Guidance
+                      {(() => {
+                        let destLat = order.delivery_lat ? Number(order.delivery_lat) : null
+                        let destLng = order.delivery_lng ? Number(order.delivery_lng) : null
+                        if (!destLat || !destLng) {
+                          const match = order.delivery_address?.match(/q=([-\d.]+),([-\d.]+)/)
+                          if (match) {
+                            destLat = parseFloat(match[1])
+                            destLng = parseFloat(match[2])
+                          }
+                        }
+
+                        if (!destLat || !destLng) return null
+
+                        return (
+                          <div className="my-3 overflow-hidden rounded-xl border border-linen bg-cream/35">
+                            <div className="bg-sage/10 text-sage font-sans font-bold text-[10px] px-3 py-1 border-b border-linen uppercase tracking-wider flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 bg-sage rounded-full animate-ping" />
+                              🗺️ In-App Route Guidance
+                            </div>
+                            <DriverRouteMapComponent
+                              driverLat={currentDriverCoords?.latitude || null}
+                              driverLng={currentDriverCoords?.longitude || null}
+                              destLat={destLat}
+                              destLng={destLng}
+                            />
                           </div>
-                          <DriverRouteMapComponent
-                            driverLat={currentDriverCoords.latitude}
-                            driverLng={currentDriverCoords.longitude}
-                            destLat={Number(order.delivery_lat)}
-                            destLng={Number(order.delivery_lng)}
-                          />
-                        </div>
-                      )}
+                        )
+                      })()}
 
                       {/* Navigation Trigger */}
                       <div className="flex gap-2">
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address || '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 bg-cream-200 hover:bg-cream-300 border border-linen text-cocoa font-sans text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-                        >
-                          <Navigation size={13} />
-                          Open External Map (Google Maps Backup)
-                        </a>
+                        {(() => {
+                          let destLat = order.delivery_lat ? Number(order.delivery_lat) : null
+                          let destLng = order.delivery_lng ? Number(order.delivery_lng) : null
+                          if (!destLat || !destLng) {
+                            const match = order.delivery_address?.match(/q=([-\d.]+),([-\d.]+)/)
+                            if (match) {
+                              destLat = parseFloat(match[1])
+                              destLng = parseFloat(match[2])
+                            }
+                          }
+
+                          let mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address || '')}`
+                          if (destLat && destLng) {
+                            mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`
+                          }
+
+                          return (
+                            <a
+                              href={mapUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 bg-cream-200 hover:bg-cream-300 border border-linen text-cocoa font-sans text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                            >
+                              <Navigation size={13} />
+                              Open Google Maps (Turn-by-Turn Navigation)
+                            </a>
+                          )
+                        })()}
                       </div>
 
                       {/* Status Action Buttons */}

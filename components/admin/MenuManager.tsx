@@ -38,6 +38,7 @@ export default function MenuManager() {
   // Form edit states
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  const [editImagePath, setEditImagePath] = useState('')
   const [editAvailability, setEditAvailability] = useState(true)
   const [editSizes, setEditSizes] = useState<Size[]>([])
   const [editSinglePrice, setEditSinglePrice] = useState<number>(0) // For items without sizes
@@ -48,12 +49,35 @@ export default function MenuManager() {
     itemId: string
     name: string
     description: string
+    image_path: string
     is_available: boolean
     sizes: Size[]
     singlePricePaise?: number // For non-sizes
     diffList: string[]
   } | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // Add new item states
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newItemName, setNewItemName] = useState('')
+  const [newItemDesc, setNewItemDesc] = useState('')
+  const [newItemCategory, setNewItemCategory] = useState('')
+  const [newItemImagePath, setNewItemImagePath] = useState('')
+  const [newItemHasSizes, setNewItemHasSizes] = useState(false)
+  const [newItemSinglePrice, setNewItemSinglePrice] = useState<number>(0)
+  const [newItemSizes, setNewItemSizes] = useState<{ label: string; price: number }[]>([
+    { label: 'Regular', price: 0 }
+  ])
+  const [savingNewItem, setSavingNewItem] = useState(false)
+
+  // Extra cheese pricing settings
+  const [cheesePrices, setCheesePrices] = useState({
+    std: 20,
+    premSmall: 30,
+    premOther: 50,
+    spec: 30
+  })
+  const [savingCheese, setSavingCheese] = useState(false)
 
   useEffect(() => {
     fetchMenuItems()
@@ -62,6 +86,7 @@ export default function MenuManager() {
   const fetchMenuItems = async () => {
     setLoading(true)
     try {
+      // 1. Fetch normal menu items
       const { data, error } = await supabase
         .from('menu_items')
         .select(`
@@ -71,7 +96,32 @@ export default function MenuManager() {
         .order('category')
 
       if (error) throw error
-      setItems(data as MenuItem[] || [])
+      
+      // Filter out system row
+      const filtered = (data as MenuItem[] || []).filter(item => item.id !== '00000000-0000-0000-0000-000000000000')
+      setItems(filtered)
+
+      // 2. Fetch cheese settings
+      const { data: systemItem } = await supabase
+        .from('menu_items')
+        .select('*, menu_item_sizes(*)')
+        .eq('id', '00000000-0000-0000-0000-000000000000')
+        .single()
+
+      if (systemItem && systemItem.menu_item_sizes) {
+        const sizes = systemItem.menu_item_sizes as any[]
+        const stdSize = sizes.find(s => s.size_label === 'Standard Price')
+        const premSmallSize = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
+        const premOtherSize = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
+        const specSize = sizes.find(s => s.size_label === 'Special Item Price')
+
+        setCheesePrices({
+          std: stdSize ? stdSize.price_paise / 100 : 20,
+          premSmall: premSmallSize ? premSmallSize.price_paise / 100 : 30,
+          premOther: premOtherSize ? premOtherSize.price_paise / 100 : 50,
+          spec: specSize ? specSize.price_paise / 100 : 30
+        })
+      }
     } catch (err: any) {
       toast.error('Failed to load menu: ' + err.message)
     } finally {
@@ -84,6 +134,7 @@ export default function MenuManager() {
     setEditingId(item.id)
     setEditName(item.name)
     setEditDesc(item.description || '')
+    setEditImagePath(item.image_path || '')
     setEditAvailability(item.is_available)
     if (item.has_sizes && item.menu_item_sizes) {
       setEditSizes([...item.menu_item_sizes])
@@ -116,6 +167,9 @@ export default function MenuManager() {
     }
     if (editDesc !== (item.description || '')) {
       diffList.push(`Update description`)
+    }
+    if (editImagePath !== item.image_path) {
+      diffList.push(`Update image: "${item.image_path}" → "${editImagePath}"`)
     }
     if (editAvailability !== item.is_available) {
       diffList.push(`Availability: ${item.is_available ? 'Available' : 'Hidden'} → ${editAvailability ? 'Available' : 'Hidden'}`)
@@ -150,6 +204,7 @@ export default function MenuManager() {
       itemId: item.id,
       name: editName,
       description: editDesc,
+      image_path: editImagePath,
       is_available: editAvailability,
       sizes: editSizes,
       singlePricePaise: !item.has_sizes ? editSinglePrice : undefined,
@@ -170,6 +225,7 @@ export default function MenuManager() {
         .update({
           name: pendingChanges.name,
           description: pendingChanges.description || null,
+          image_path: pendingChanges.image_path,
           is_available: pendingChanges.is_available
         })
         .eq('id', pendingChanges.itemId)
@@ -212,6 +268,105 @@ export default function MenuManager() {
     }
   }
 
+  // Save cheese prices
+  const handleSaveCheesePrices = async () => {
+    setSavingCheese(true)
+    try {
+      const sizesToUpdate = [
+        { label: 'Standard Price', price: cheesePrices.std * 100 },
+        { label: 'Premium Pizza (Small/Half) Price', price: cheesePrices.premSmall * 100 },
+        { label: 'Premium Pizza (Medium/Large) Price', price: cheesePrices.premOther * 100 },
+        { label: 'Special Item Price', price: cheesePrices.spec * 100 }
+      ]
+
+      for (const sz of sizesToUpdate) {
+        const { error } = await supabase
+          .from('menu_item_sizes')
+          .update({ price_paise: sz.price })
+          .eq('menu_item_id', '00000000-0000-0000-0000-000000000000')
+          .eq('size_label', sz.label)
+
+        if (error) throw error
+      }
+
+      toast.success('Extra Cheese prices updated successfully!')
+    } catch (err: any) {
+      toast.error('Failed to save cheese prices: ' + err.message)
+    } finally {
+      setSavingCheese(false)
+    }
+  }
+
+  // Add new item
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newItemName || !newItemCategory) {
+      toast.error('Please enter name and category')
+      return
+    }
+
+    setSavingNewItem(true)
+    try {
+      // 1. Insert item
+      const { data: itemData, error: itemErr } = await supabase
+        .from('menu_items')
+        .insert({
+          name: newItemName,
+          description: newItemDesc || null,
+          category: newItemCategory,
+          image_path: newItemImagePath || '/images/logo.png',
+          is_available: true,
+          has_sizes: newItemHasSizes
+        })
+        .select()
+        .single()
+
+      if (itemErr) throw itemErr
+
+      // 2. Insert sizes
+      if (newItemHasSizes) {
+        for (let idx = 0; idx < newItemSizes.length; idx++) {
+          const sz = newItemSizes[idx]
+          const { error: szErr } = await supabase
+            .from('menu_item_sizes')
+            .insert({
+              menu_item_id: itemData.id,
+              size_label: sz.label,
+              price_paise: Math.round(sz.price * 100),
+              sort_order: idx + 1
+            })
+          if (szErr) throw szErr
+        }
+      } else {
+        const { error: szErr } = await supabase
+          .from('menu_item_sizes')
+          .insert({
+            menu_item_id: itemData.id,
+            size_label: 'Regular',
+            price_paise: Math.round(newItemSinglePrice * 100),
+            sort_order: 1
+          })
+        if (szErr) throw szErr
+      }
+
+      toast.success('New menu item added successfully!')
+      // Reset form
+      setNewItemName('')
+      setNewItemDesc('')
+      setNewItemCategory('')
+      setNewItemImagePath('')
+      setNewItemHasSizes(false)
+      setNewItemSinglePrice(0)
+      setNewItemSizes([{ label: 'Regular', price: 0 }])
+      setShowAddModal(false)
+      fetchMenuItems()
+    } catch (err: any) {
+      toast.error('Failed to add item: ' + err.message)
+    } finally {
+      setSavingNewItem(false)
+    }
+  }
+
   // Toggle item availability quickly
   const toggleQuickAvailability = async (item: MenuItem) => {
     const nextVal = !item.is_available
@@ -242,7 +397,81 @@ export default function MenuManager() {
   return (
     <div className="space-y-6">
       
-      {/* Search and control bar */}
+      {/* 1. Cheese Price Settings Panel */}
+      <div className="bg-cream-200 border border-linen rounded-xl2 p-5 shadow-card">
+        <h3 className="font-serif text-base text-cocoa font-bold mb-1 flex items-center gap-2">
+          🧀 Extra Cheese Pricing Settings (System-wide)
+        </h3>
+        <p className="font-sans text-xs text-cocoa-muted mb-4">
+          Adjust the prices charged for adding extra cheese to items in different categories. Updates take effect instantly at checkout.
+        </p>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
+            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Standard Price</span>
+            <div className="relative">
+              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
+              <input
+                type="number"
+                value={cheesePrices.std}
+                onChange={e => setCheesePrices(prev => ({ ...prev, std: parseFloat(e.target.value) || 0 }))}
+                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
+              />
+            </div>
+          </div>
+          
+          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
+            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Premium Pizza (Small/Half)</span>
+            <div className="relative">
+              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
+              <input
+                type="number"
+                value={cheesePrices.premSmall}
+                onChange={e => setCheesePrices(prev => ({ ...prev, premSmall: parseFloat(e.target.value) || 0 }))}
+                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
+            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Premium Pizza (Med/Large)</span>
+            <div className="relative">
+              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
+              <input
+                type="number"
+                value={cheesePrices.premOther}
+                onChange={e => setCheesePrices(prev => ({ ...prev, premOther: parseFloat(e.target.value) || 0 }))}
+                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
+            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Special Item Price</span>
+            <div className="relative">
+              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
+              <input
+                type="number"
+                value={cheesePrices.spec}
+                onChange={e => setCheesePrices(prev => ({ ...prev, spec: parseFloat(e.target.value) || 0 }))}
+                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSaveCheesePrices}
+            disabled={savingCheese}
+            className="bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-60 cursor-pointer"
+          >
+            {savingCheese ? 'Saving Settings...' : 'Save Cheese Prices'}
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Search and control bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-linen p-4 rounded-xl2 shadow-sm">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-3.5 text-cocoa-muted" />
@@ -254,8 +483,17 @@ export default function MenuManager() {
             className="w-full bg-cream border border-linen rounded-xl pl-9 pr-4 py-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
           />
         </div>
-        <div className="font-sans text-xs text-cocoa-muted flex items-center gap-1.5 shrink-0 px-1">
-          <span>Total catalog: {items.length} items</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer"
+          >
+            <Plus size={14} />
+            Add Menu Item
+          </button>
+          <div className="font-sans text-xs text-cocoa-muted flex items-center gap-1.5 shrink-0 px-1 border-l border-linen pl-3">
+            <span>Total catalog: {items.length} items</span>
+          </div>
         </div>
       </div>
 
@@ -312,6 +550,16 @@ export default function MenuManager() {
                                 onChange={e => setEditDesc(e.target.value)}
                                 rows={2}
                                 className="w-full bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage resize-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[9px] font-sans font-bold text-cocoa uppercase mb-1">Image Path / URL</label>
+                              <input
+                                type="text"
+                                value={editImagePath}
+                                onChange={e => setEditImagePath(e.target.value)}
+                                className="w-full bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
                               />
                             </div>
 
@@ -392,7 +640,7 @@ export default function MenuManager() {
                           /* STANDARD DISPLAY LAYOUT */
                           <div className="flex flex-col h-full justify-between gap-3">
                             <div className="flex gap-3 min-w-0">
-                              <div className="w-16 h-16 rounded-xl bg-cream border border-linen overflow-hidden shrink-0 flex items-center justify-center">
+                              <div className="w-16 h-16 rounded-xl bg-cream border border-linen overflow-hidden shrink-0 flex items-center justify-center relative">
                                 <img 
                                   src={item.image_path} 
                                   alt={item.name} 
@@ -523,6 +771,182 @@ export default function MenuManager() {
                   Discard
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add New Menu Item Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 bg-cocoa/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white max-w-lg w-full border border-linen rounded-2xl p-6 shadow-lg space-y-4 my-8"
+            >
+              <div className="flex items-center justify-between border-b border-linen pb-3">
+                <h4 className="font-serif text-lg text-cocoa font-bold">✨ Add New Menu Item</h4>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="p-1 rounded-lg hover:bg-cream border border-linen text-cocoa-muted"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddItem} className="space-y-4 text-xs font-sans text-cocoa">
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1">Item Title *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newItemName}
+                    onChange={e => setNewItemName(e.target.value)}
+                    placeholder="e.g. Gannamasti Special Pizza"
+                    className="w-full bg-cream border border-linen rounded-lg p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1">Description</label>
+                  <textarea
+                    value={newItemDesc}
+                    onChange={e => setNewItemDesc(e.target.value)}
+                    placeholder="Describe ingredients, taste profile, and preparation style..."
+                    rows={3}
+                    className="w-full bg-cream border border-linen rounded-lg p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1">Category *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newItemCategory}
+                      onChange={e => setNewItemCategory(e.target.value)}
+                      placeholder="e.g. Premium Loaded Pizza"
+                      className="w-full bg-cream border border-linen rounded-lg p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase mb-1">Image URL or Local Path</label>
+                    <input
+                      type="text"
+                      value={newItemImagePath}
+                      onChange={e => setNewItemImagePath(e.target.value)}
+                      placeholder="e.g. /images/special-pizza.png"
+                      className="w-full bg-cream border border-linen rounded-lg p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-linen/50 pt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-cocoa">Does this product have multiple sizes?</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewItemHasSizes(!newItemHasSizes)}
+                      className={`font-sans text-[10px] font-bold py-1 px-3 rounded-full border transition-all ${
+                        newItemHasSizes 
+                          ? 'bg-sage/10 text-sage border-sage/20' 
+                          : 'bg-cream text-cocoa-muted border-linen'
+                      }`}
+                    >
+                      {newItemHasSizes ? 'Multi-size' : 'Single standard price'}
+                    </button>
+                  </div>
+
+                  {newItemHasSizes ? (
+                    <div className="space-y-2">
+                      <span className="block text-[9px] font-bold text-cocoa-muted uppercase mb-1">Sizes & Pricing (₹)</span>
+                      {newItemSizes.map((sz, idx) => (
+                        <div key={idx} className="flex gap-3 items-center">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Size Label (e.g. Small)"
+                            value={sz.label}
+                            onChange={e => {
+                              const next = [...newItemSizes]
+                              next[idx].label = e.target.value
+                              setNewItemSizes(next)
+                            }}
+                            className="flex-1 bg-cream border border-linen rounded-lg p-2 text-xs text-cocoa"
+                          />
+                          <div className="relative w-28">
+                            <span className="absolute left-2.5 top-1.5 text-cocoa-muted">₹</span>
+                            <input
+                              type="number"
+                              required
+                              placeholder="Price"
+                              value={sz.price || ''}
+                              onChange={e => {
+                                const next = [...newItemSizes]
+                                next[idx].price = parseFloat(e.target.value) || 0
+                                setNewItemSizes(next)
+                              }}
+                              className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2 py-1.5 text-xs text-cocoa font-mono text-right"
+                            />
+                          </div>
+                          {newItemSizes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setNewItemSizes(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setNewItemSizes(prev => [...prev, { label: '', price: 0 }])}
+                        className="text-[10px] font-bold text-sage hover:underline flex items-center gap-1 mt-1"
+                      >
+                        + Add Size option
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[9px] font-sans font-bold text-cocoa-muted uppercase mb-1">Standard Item Price (₹)</label>
+                      <div className="relative max-w-[140px]">
+                        <span className="absolute left-2.5 top-2 text-cocoa-muted">₹</span>
+                        <input
+                          type="number"
+                          required
+                          value={newItemSinglePrice || ''}
+                          onChange={e => setNewItemSinglePrice(parseFloat(e.target.value) || 0)}
+                          placeholder="Price"
+                          className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2 py-2 text-xs text-cocoa font-mono text-right"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2.5 pt-4 border-t border-linen/50">
+                  <button
+                    type="submit"
+                    disabled={savingNewItem}
+                    className="flex-1 bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 rounded-xl active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer"
+                  >
+                    {savingNewItem ? 'Creating...' : 'Create Menu Item'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="bg-cream hover:bg-linen border border-linen text-cocoa font-sans text-xs font-bold py-3 px-4 rounded-xl active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

@@ -37,6 +37,41 @@ export default function CheckoutPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  const [cheesePrices, setCheesePrices] = useState<{ standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number } | undefined>(undefined)
+
+  // Fetch dynamic cheese prices
+  useEffect(() => {
+    const fetchCheesePrices = async () => {
+      try {
+        const { data } = await supabase
+          .from('menu_items')
+          .select('*, menu_item_sizes(*)')
+          .eq('category', 'System')
+          .eq('name', 'Extra Cheese Settings')
+          .single()
+
+        if (data && data.menu_item_sizes) {
+          const sizes = data.menu_item_sizes as any[]
+          const std = sizes.find(s => s.size_label === 'Standard Price')
+          const premSmall = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
+          const premOther = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
+          const spec = sizes.find(s => s.size_label === 'Special Item Price')
+
+          setCheesePrices({
+            standard: std ? std.price_paise : 2000,
+            premiumPizzaSmall: premSmall ? premSmall.price_paise : 3000,
+            premiumPizzaOther: premOther ? premOther.price_paise : 5000,
+            specialItem: spec ? spec.price_paise : 3000
+          })
+        }
+      } catch (err) {
+        console.error('Failed to fetch dynamic cheese prices:', err)
+      }
+    }
+    fetchCheesePrices()
+  }, [supabase])
+
+
   // 1. Enforce authentication on checkout mount & autofill details
   useEffect(() => {
     const verifyUser = async () => {
@@ -108,7 +143,7 @@ export default function CheckoutPage() {
   const packagingCharges = sugarcaneQty * 500 // ₹5 per sugarcane item in paise
 
   // Flat Platform Fee
-  const platformFee = 500 // ₹5 flat in paise
+  const platformFee = 600 // ₹6 flat in paise
 
   // Delivery Charges: ₹50 under ₹299 (paise threshold: 29900), free for ₹300+ (30000+)
   const deliveryCharges = deliveryOption === 'delivery'
@@ -123,7 +158,7 @@ export default function CheckoutPage() {
                           item.name.toLowerCase().includes('ganna') ||
                           (item.category && item.category.toLowerCase().includes('cane'))
       if (!isSugarcane) {
-        const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
+        const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
         discountAmount += Math.round(0.10 * (item.price_paise + extraPrice) * item.quantity)
       }
     })
@@ -378,7 +413,7 @@ export default function CheckoutPage() {
                 >
                   <div className="space-y-3 mt-2">
                     {items.map((item) => {
-                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
+                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
                       const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                       return (
                         <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3 py-1">
@@ -657,7 +692,7 @@ export default function CheckoutPage() {
                 <h2 className="font-display text-lg text-cocoa mb-4">Order Summary</h2>
                 <div className="space-y-3.5 mb-5 max-h-[260px] overflow-y-auto pr-1 border-b border-linen/60 pb-4">
                   {items.map((item) => {
-                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
+                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
                     const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                     return (
                       <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
