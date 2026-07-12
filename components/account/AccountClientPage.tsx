@@ -33,6 +33,17 @@ const STATUS_CONFIG = {
   cancelled: { label: 'Cancelled', icon: XCircle, color: 'text-cocoa-muted', bg: 'bg-linen' },
 }
 
+const formatUserIdentifier = (email: string) => {
+  if (email.endsWith('@phone.gannamasticafe.in')) {
+    const rawNumber = email.split('@')[0]
+    if (rawNumber.startsWith('91') && rawNumber.length === 12) {
+      return `+91 ${rawNumber.substring(2, 7)} ${rawNumber.substring(7)}`
+    }
+    return `+${rawNumber}`
+  }
+  return email
+}
+
 export default function AccountClientPage({
   orders: initialOrders,
   notifications: initialNotifications,
@@ -670,16 +681,21 @@ export default function AccountClientPage({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-white border border-linen p-5 rounded-2xl shadow-xs">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-sage/10 text-sage flex items-center justify-center font-serif text-lg font-bold shrink-0">
-              {(profile?.full_name || userEmail.split('@')[0]).charAt(0).toUpperCase()}
+              {(() => {
+                const name = profile?.full_name || formatUserIdentifier(userEmail);
+                return name.startsWith('+') ? name.charAt(1) : name.charAt(0).toUpperCase();
+              })()}
             </div>
             <div className="min-w-0">
               <p className="font-sans text-xs text-sage font-medium uppercase tracking-widest">
                 Welcome back
               </p>
               <h1 className="font-serif text-xl sm:text-2xl text-cocoa truncate">
-                {profile?.full_name || userEmail.split('@')[0]}
+                {profile?.full_name || formatUserIdentifier(userEmail)}
               </h1>
-              <p className="font-sans text-xs text-cocoa-muted mt-0.5 truncate">{userEmail}</p>
+              <p className="font-sans text-xs text-cocoa-muted mt-0.5 truncate">
+                {userEmail.endsWith('@phone.gannamasticafe.in') ? 'Signed in via Phone' : userEmail}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-auto">

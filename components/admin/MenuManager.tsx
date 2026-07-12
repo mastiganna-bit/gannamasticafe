@@ -27,6 +27,8 @@ interface MenuItem {
   is_available: boolean
   has_sizes: boolean
   menu_item_sizes?: Size[]
+  allow_extra_cheese?: boolean
+  extra_cheese_price_paise?: number
 }
 
 export default function MenuManager() {
@@ -45,6 +47,8 @@ export default function MenuManager() {
   const [editAvailability, setEditAvailability] = useState(true)
   const [editSizes, setEditSizes] = useState<Size[]>([])
   const [editSinglePrice, setEditSinglePrice] = useState<number>(0) // For items without sizes
+  const [editAllowExtraCheese, setEditAllowExtraCheese] = useState(false)
+  const [editExtraCheesePrice, setEditExtraCheesePrice] = useState<number>(0)
 
   // Confirmation Modal state
   const [showConfirm, setShowConfirm] = useState(false)
@@ -56,6 +60,8 @@ export default function MenuManager() {
     is_available: boolean
     sizes: Size[]
     singlePricePaise?: number // For non-sizes
+    allow_extra_cheese: boolean
+    extra_cheese_price_paise: number
     diffList: string[]
   } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -71,6 +77,8 @@ export default function MenuManager() {
   const [newItemSizes, setNewItemSizes] = useState<{ label: string; price: number }[]>([
     { label: 'Regular', price: 0 }
   ])
+  const [newAllowExtraCheese, setNewAllowExtraCheese] = useState(false)
+  const [newExtraCheesePrice, setNewExtraCheesePrice] = useState<number>(20)
   const [savingNewItem, setSavingNewItem] = useState(false)
 
   // Extra cheese pricing settings
@@ -85,6 +93,23 @@ export default function MenuManager() {
   useEffect(() => {
     fetchMenuItems()
   }, [])
+
+  // Auto-fill new item cheese settings based on selected category
+  useEffect(() => {
+    if (!newItemCategory) return
+    const cat = newItemCategory.toLowerCase()
+    if (cat.includes('shake') || cat.includes('juice')) {
+      setNewAllowExtraCheese(false)
+      setNewExtraCheesePrice(0)
+    } else {
+      setNewAllowExtraCheese(true)
+      if (cat.includes('premium') || cat.includes('special')) {
+        setNewExtraCheesePrice(30)
+      } else {
+        setNewExtraCheesePrice(20)
+      }
+    }
+  }, [newItemCategory])
 
   const fetchMenuItems = async () => {
     setLoading(true)
@@ -104,27 +129,6 @@ export default function MenuManager() {
       const filtered = (data as MenuItem[] || []).filter(item => item.id !== '00000000-0000-0000-0000-000000000000')
       setItems(filtered)
 
-      // 2. Fetch cheese settings
-      const { data: systemItem } = await supabase
-        .from('menu_items')
-        .select('*, menu_item_sizes(*)')
-        .eq('id', '00000000-0000-0000-0000-000000000000')
-        .single()
-
-      if (systemItem && systemItem.menu_item_sizes) {
-        const sizes = systemItem.menu_item_sizes as any[]
-        const stdSize = sizes.find(s => s.size_label === 'Standard Price')
-        const premSmallSize = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
-        const premOtherSize = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
-        const specSize = sizes.find(s => s.size_label === 'Special Item Price')
-
-        setCheesePrices({
-          std: stdSize ? stdSize.price_paise / 100 : 20,
-          premSmall: premSmallSize ? premSmallSize.price_paise / 100 : 30,
-          premOther: premOtherSize ? premOtherSize.price_paise / 100 : 50,
-          spec: specSize ? specSize.price_paise / 100 : 30
-        })
-      }
     } catch (err: any) {
       toast.error('Failed to load menu: ' + err.message)
     } finally {
@@ -149,6 +153,8 @@ export default function MenuManager() {
       setEditSinglePrice(0)
       setEditSizes([])
     }
+    setEditAllowExtraCheese(item.allow_extra_cheese ?? false)
+    setEditExtraCheesePrice((item.extra_cheese_price_paise ?? 2000) / 100)
   }
 
   const cancelEditing = () => {
@@ -244,6 +250,13 @@ export default function MenuManager() {
       }
     }
 
+    if ((editAllowExtraCheese ?? false) !== (item.allow_extra_cheese ?? false)) {
+      diffList.push(`Allow Extra Cheese: ${item.allow_extra_cheese ? 'Yes' : 'No'} → ${editAllowExtraCheese ? 'Yes' : 'No'}`)
+    }
+    if (editAllowExtraCheese && editExtraCheesePrice !== ((item.extra_cheese_price_paise ?? 2000) / 100)) {
+      diffList.push(`Extra Cheese Price: ₹${((item.extra_cheese_price_paise ?? 2000) / 100).toFixed(2)} → ₹${editExtraCheesePrice.toFixed(2)}`)
+    }
+
     if (diffList.length === 0) {
       setEditingId(null)
       toast('No changes detected', { icon: 'ℹ️' })
@@ -259,6 +272,8 @@ export default function MenuManager() {
       is_available: editAvailability,
       sizes: editSizes,
       singlePricePaise: !item.has_sizes ? editSinglePrice : undefined,
+      allow_extra_cheese: editAllowExtraCheese,
+      extra_cheese_price_paise: Math.round(editExtraCheesePrice * 100),
       diffList
     })
     setShowConfirm(true)
@@ -275,7 +290,9 @@ export default function MenuManager() {
         name: pendingChanges.name,
         description: pendingChanges.description || null,
         image_path: pendingChanges.image_path,
-        is_available: pendingChanges.is_available
+        is_available: pendingChanges.is_available,
+        allow_extra_cheese: pendingChanges.allow_extra_cheese,
+        extra_cheese_price_paise: pendingChanges.extra_cheese_price_paise
       }
 
       const currentItem = items.find(i => i.id === pendingChanges.itemId)
@@ -326,35 +343,6 @@ export default function MenuManager() {
     }
   }
 
-  // Save cheese prices
-  const handleSaveCheesePrices = async () => {
-    setSavingCheese(true)
-    try {
-      const sizesToUpdate = [
-        { label: 'Standard Price', price: cheesePrices.std * 100 },
-        { label: 'Premium Pizza (Small/Half) Price', price: cheesePrices.premSmall * 100 },
-        { label: 'Premium Pizza (Medium/Large) Price', price: cheesePrices.premOther * 100 },
-        { label: 'Special Item Price', price: cheesePrices.spec * 100 }
-      ]
-
-      for (const sz of sizesToUpdate) {
-        const { error } = await supabase
-          .from('menu_item_sizes')
-          .update({ price_paise: sz.price })
-          .eq('menu_item_id', '00000000-0000-0000-0000-000000000000')
-          .eq('size_label', sz.label)
-
-        if (error) throw error
-      }
-
-      toast.success('Extra Cheese prices updated successfully!')
-    } catch (err: any) {
-      toast.error('Failed to save cheese prices: ' + err.message)
-    } finally {
-      setSavingCheese(false)
-    }
-  }
-
   // Add new item
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -372,7 +360,9 @@ export default function MenuManager() {
         category: newItemCategory,
         image_path: newItemImagePath || '/images/logo.png',
         is_available: true,
-        has_sizes: newItemHasSizes
+        has_sizes: newItemHasSizes,
+        allow_extra_cheese: !(newItemCategory?.toLowerCase().includes('shake') || newItemCategory?.toLowerCase().includes('juice')) ? newAllowExtraCheese : false,
+        extra_cheese_price_paise: !(newItemCategory?.toLowerCase().includes('shake') || newItemCategory?.toLowerCase().includes('juice')) ? Math.round(newExtraCheesePrice * 100) : 0
       }
 
       if (items.length > 0 && 'image_backup' in items[0]) {
@@ -422,6 +412,8 @@ export default function MenuManager() {
       setNewItemHasSizes(false)
       setNewItemSinglePrice(0)
       setNewItemSizes([{ label: 'Regular', price: 0 }])
+      setNewAllowExtraCheese(false)
+      setNewExtraCheesePrice(20)
       setShowAddModal(false)
       fetchMenuItems()
     } catch (err: any) {
@@ -460,80 +452,6 @@ export default function MenuManager() {
 
   return (
     <div className="space-y-6">
-      
-      {/* 1. Cheese Price Settings Panel */}
-      <div className="bg-cream-200 border border-linen rounded-xl2 p-5 shadow-card">
-        <h3 className="font-serif text-base text-cocoa font-bold mb-1 flex items-center gap-2">
-          🧀 Extra Cheese Pricing Settings (System-wide)
-        </h3>
-        <p className="font-sans text-xs text-cocoa-muted mb-4">
-          Adjust the prices charged for adding extra cheese to items in different categories. Updates take effect instantly at checkout.
-        </p>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
-            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Standard Price</span>
-            <div className="relative">
-              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
-              <input
-                type="number"
-                value={cheesePrices.std}
-                onChange={e => setCheesePrices(prev => ({ ...prev, std: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
-              />
-            </div>
-          </div>
-          
-          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
-            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Premium Pizza (Small/Half)</span>
-            <div className="relative">
-              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
-              <input
-                type="number"
-                value={cheesePrices.premSmall}
-                onChange={e => setCheesePrices(prev => ({ ...prev, premSmall: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
-              />
-            </div>
-          </div>
-
-          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
-            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Premium Pizza (Med/Large)</span>
-            <div className="relative">
-              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
-              <input
-                type="number"
-                value={cheesePrices.premOther}
-                onChange={e => setCheesePrices(prev => ({ ...prev, premOther: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
-              />
-            </div>
-          </div>
-
-          <div className="bg-white p-3 rounded-xl border border-linen space-y-1">
-            <span className="block text-[10px] font-sans font-bold text-cocoa-muted uppercase">Special Item Price</span>
-            <div className="relative">
-              <span className="absolute left-2.5 top-2 text-cocoa-muted text-xs">₹</span>
-              <input
-                type="number"
-                value={cheesePrices.spec}
-                onChange={e => setCheesePrices(prev => ({ ...prev, spec: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa font-mono font-bold"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            onClick={handleSaveCheesePrices}
-            disabled={savingCheese}
-            className="bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-60 cursor-pointer"
-          >
-            {savingCheese ? 'Saving Settings...' : 'Save Cheese Prices'}
-          </button>
-        </div>
-      </div>
 
       {/* 2. Search and control bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-linen p-4 rounded-xl2 shadow-sm">
@@ -724,7 +642,7 @@ export default function MenuManager() {
                               </button>
                             </div>
 
-                            {/* Pricing inputs */}
+                             {/* Pricing inputs */}
                             <div className="border-t border-linen/60 pt-3">
                               <label className="block text-[9px] font-sans font-bold text-cocoa uppercase mb-2">Price Details (₹)</label>
                               {item.has_sizes ? (
@@ -764,6 +682,36 @@ export default function MenuManager() {
                                 </div>
                               )}
                             </div>
+
+                            {/* Extra Cheese Options */}
+                            {!(item.category?.toLowerCase().includes('shake')) && (
+                              <div className="border-t border-linen/60 pt-3 space-y-2">
+                                <label className="flex items-center justify-between cursor-pointer py-1">
+                                  <span className="text-xs font-sans text-cocoa font-medium">Allow Extra Cheese Option</span>
+                                  <input
+                                    type="checkbox"
+                                    checked={editAllowExtraCheese}
+                                    onChange={e => setEditAllowExtraCheese(e.target.checked)}
+                                    className="w-4 h-4 rounded border-linen text-sage focus:ring-sage focus:ring-offset-0 cursor-pointer accent-sage"
+                                  />
+                                </label>
+                                {editAllowExtraCheese && (
+                                  <div className="flex items-center justify-between gap-3 text-xs">
+                                    <span className="font-sans text-cocoa-muted">Extra Cheese Price</span>
+                                    <div className="relative flex-1 max-w-[120px]">
+                                      <span className="absolute left-2.5 top-2 text-cocoa-muted font-sans">₹</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        value={editExtraCheesePrice}
+                                        onChange={e => setEditExtraCheesePrice(parseFloat(e.target.value) || 0)}
+                                        className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa text-right focus:outline-none focus:ring-1 focus:ring-sage font-mono font-bold"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* Editing Controls */}
                             <div className="flex gap-2 pt-3 border-t border-linen/50">
@@ -813,7 +761,7 @@ export default function MenuManager() {
 
                             {/* Prices display */}
                             <div className="border-t border-linen/50 pt-2.5 flex items-center justify-between">
-                              <div className="flex gap-2.5 overflow-x-auto py-0.5">
+                              <div className="flex items-center gap-2 overflow-x-auto py-0.5">
                                 {item.has_sizes && item.menu_item_sizes ? (
                                   item.menu_item_sizes.map(size => (
                                     <div key={size.id} className="text-[10px] font-sans bg-cream border border-linen px-2 py-0.5 rounded-md shrink-0">
@@ -827,6 +775,11 @@ export default function MenuManager() {
                                       ? formatPrice(item.menu_item_sizes[0].price_paise)
                                       : '₹0.00'
                                     }
+                                  </div>
+                                )}
+                                {item.allow_extra_cheese && (
+                                  <div className="text-[10px] font-sans text-sage font-semibold bg-sage/5 border border-sage/10 px-2 py-0.5 rounded-md shrink-0">
+                                    Cheese: {formatPrice(item.extra_cheese_price_paise || 0)}
                                   </div>
                                 )}
                               </div>
@@ -1118,6 +1071,36 @@ export default function MenuManager() {
                     </div>
                   )}
                 </div>
+
+                {!(newItemCategory?.toLowerCase().includes('shake')) && (
+                  <div className="border-t border-linen/50 pt-3 space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer py-1">
+                      <span className="text-xs font-bold text-cocoa">Allow Extra Cheese Option?</span>
+                      <input
+                        type="checkbox"
+                        checked={newAllowExtraCheese}
+                        onChange={e => setNewAllowExtraCheese(e.target.checked)}
+                        className="w-4 h-4 rounded border-linen text-sage focus:ring-sage focus:ring-offset-0 cursor-pointer accent-sage"
+                      />
+                    </label>
+                    {newAllowExtraCheese && (
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-sans text-cocoa-muted">Extra Cheese Price</span>
+                        <div className="relative flex-1 max-w-[120px]">
+                          <span className="absolute left-2.5 top-2 text-cocoa-muted font-sans">₹</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={newExtraCheesePrice}
+                            onChange={e => setNewExtraCheesePrice(parseFloat(e.target.value) || 0)}
+                            placeholder="Price"
+                            className="w-full bg-cream border border-linen rounded-lg pl-6 pr-2.5 py-1.5 text-xs text-cocoa text-right focus:outline-none focus:ring-1 focus:ring-sage font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex gap-2.5 pt-4 border-t border-linen/50">
                   <button

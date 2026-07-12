@@ -26,6 +26,7 @@ export function isExtraCheeseEligible(category: string): boolean {
     'Grill & Thrill Sandwiches',
     'Single Topping Pizza',
     'Double Topping Pizza',
+    'Burger Binge',
   ]
   return eligibleCategories.includes(category)
 }

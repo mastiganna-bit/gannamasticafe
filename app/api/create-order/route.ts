@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     for (const item of items) {
       const { data: dbSize, error: sizeError } = await supabase
         .from('menu_item_sizes')
-        .select('price_paise, size_label, menu_items (name, category, is_available)')
+        .select('price_paise, size_label, menu_items (name, category, is_available, allow_extra_cheese, extra_cheese_price_paise)')
         .eq('id', item.size_id)
         .single()
 
@@ -115,10 +115,12 @@ export async function POST(request: NextRequest) {
       let itemPricePaise = sizeData.price_paise
 
       if (item.extra_cheese) {
-        const category = sizeData.menu_items?.category || ''
-        const sizeLabel = sizeData.size_label || ''
-        const itemName = sizeData.menu_items?.name || ''
-        itemPricePaise += getExtraCheesePrice(category, sizeLabel, itemName, dynamicCheesePrices)
+        const allowCheese = sizeData.menu_items?.allow_extra_cheese ?? false
+        const cheesePrice = sizeData.menu_items?.extra_cheese_price_paise ?? 2000
+        if (!allowCheese) {
+          return NextResponse.json({ error: `Extra cheese is not allowed for "${sizeData.menu_items?.name || 'this item'}"` }, { status: 400 })
+        }
+        itemPricePaise += cheesePrice
       }
 
       const itemTotal = itemPricePaise * item.quantity

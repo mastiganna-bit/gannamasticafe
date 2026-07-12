@@ -37,8 +37,8 @@ export default function MenuCard({ item }: { item: MenuItem }) {
     else if (size === 'jumbo') displayImagePath = '/images/cane/ganna-jumbo.jpg'
   }
 
-  const eligibleForExtraCheese = isExtraCheeseEligible(item.category)
-  const extraCheesePrice = getExtraCheesePrice(item.category, selectedSize.size_label)
+  const eligibleForExtraCheese = !!item.allow_extra_cheese && item.category !== 'Shake it up'
+  const extraCheesePrice = item.extra_cheese_price_paise || 0
 
   const handleAdd = () => {
     addItem({
@@ -50,6 +50,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
       quantity: 1,
       image_path: displayImagePath,
       extra_cheese: extraCheese,
+      extra_cheese_price_paise: item.extra_cheese_price_paise,
       category: item.category,
     })
     // Reset option after adding to cart for fresh selections
@@ -168,7 +169,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
                         {size.size_label}
                       </span>
                       <span className={selectedSize.id === size.id ? 'text-sage font-bold shrink-0' : 'text-amber-cafe font-semibold shrink-0'}>
-                        {formatPrice(size.price_paise + (extraCheese ? getExtraCheesePrice(item.category, size.size_label) : 0))}
+                        {formatPrice(size.price_paise + (extraCheese ? extraCheesePrice : 0))}
                       </span>
                     </button>
                   ))}

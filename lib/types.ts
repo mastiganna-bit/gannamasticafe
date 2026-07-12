@@ -16,6 +16,8 @@ export type MenuItem = {
   has_sizes: boolean
   created_at: string
   menu_item_sizes: MenuItemSize[]
+  allow_extra_cheese?: boolean
+  extra_cheese_price_paise?: number
 }
 
 export type CartItem = {
@@ -27,6 +29,7 @@ export type CartItem = {
   quantity: number
   image_path: string
   extra_cheese?: boolean
+  extra_cheese_price_paise?: number
   category?: string
 }
 

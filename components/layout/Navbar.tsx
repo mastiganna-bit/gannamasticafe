@@ -9,6 +9,17 @@ import { useCart } from '@/components/cart/CartProvider'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
+const formatUserIdentifier = (email: string) => {
+  if (email.endsWith('@phone.gannamasticafe.in')) {
+    const rawNumber = email.split('@')[0]
+    if (rawNumber.startsWith('91') && rawNumber.length === 12) {
+      return `+91 ${rawNumber.substring(2, 7)} ${rawNumber.substring(7)}`
+    }
+    return `+${rawNumber}`
+  }
+  return email
+}
+
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
@@ -254,7 +265,7 @@ export default function Navbar() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-serif text-sm font-medium text-cocoa truncate">My Account</p>
-                      <p className="font-sans text-[10px] text-cocoa-muted truncate">{user.email}</p>
+                      <p className="font-sans text-[10px] text-cocoa-muted truncate">{formatUserIdentifier(user.email)}</p>
                     </div>
                   </Link>
                 ) : (

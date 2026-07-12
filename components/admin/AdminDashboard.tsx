@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, Fragment } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Order } from '@/lib/types'
@@ -93,7 +93,11 @@ export default function AdminDashboard({
     let subtotal = 0
     const items = order.items as any[]
     items.forEach(item => {
-      const cheese = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+      const cheese = item.extra_cheese
+        ? (item.extra_cheese_price_paise !== undefined
+          ? item.extra_cheese_price_paise
+          : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+        : 0
       subtotal += (item.price_paise + cheese) * item.quantity
     })
     return subtotal
@@ -120,7 +124,11 @@ export default function AdminDashboard({
       const category = (item.category || '').toLowerCase()
       const isSugarcane = name.includes('sugarcane') || name.includes('ganna') || category.includes('cane')
       if (!isSugarcane) {
-        const cheese = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+        const cheese = item.extra_cheese
+          ? (item.extra_cheese_price_paise !== undefined
+            ? item.extra_cheese_price_paise
+            : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+          : 0
         discount += Math.round(0.10 * (item.price_paise + cheese) * item.quantity)
       }
     })
@@ -821,9 +829,13 @@ export default function AdminDashboard({
                           <div>
                             <p className="font-sans text-[10px] font-bold text-cocoa-muted uppercase tracking-wider mb-2">Order Items</p>
                             <div className="space-y-2 bg-cream/30 p-3 rounded-xl border border-linen/50">
-                              {(order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number; extra_cheese?: boolean; category?: string }>)
+                              {(order.items as Array<{ name: string; size_label: string; quantity: number; price_paise: number; extra_cheese?: boolean; extra_cheese_price_paise?: number; category?: string }>)
                                 .map((item, i) => {
-                                  const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+                                  const extraPrice = item.extra_cheese
+                                    ? (item.extra_cheese_price_paise !== undefined
+                                      ? item.extra_cheese_price_paise
+                                      : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+                                    : 0
                                   return (
                                     <div key={i} className="space-y-0.5 text-xs font-sans">
                                       <div className="flex justify-between">
@@ -1134,8 +1146,8 @@ export default function AdminDashboard({
                       const itemsSummary = orderItems.map(item => `${item.name} (${item.size_label}) x${item.quantity}`).join(', ')
                       
                       return (
-                        <>
-                          <tr key={order.id} className="hover:bg-cream/20 transition-colors border-b border-linen/30">
+                        <Fragment key={order.id}>
+                          <tr className="hover:bg-cream/20 transition-colors border-b border-linen/30">
                             <td className="p-4 text-cocoa-muted whitespace-nowrap">
                               {new Date(order.created_at).toLocaleDateString('en-IN', {
                                 day: '2-digit',
@@ -1203,7 +1215,11 @@ export default function AdminDashboard({
                                       </h4>
                                       <div className="space-y-2">
                                         {orderItems.map((item, i) => {
-                                          const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name) : 0
+                                          const extraPrice = item.extra_cheese
+                                            ? (item.extra_cheese_price_paise !== undefined
+                                              ? item.extra_cheese_price_paise
+                                              : getExtraCheesePrice(item.category || '', item.size_label, item.name))
+                                            : 0
                                           return (
                                             <div key={i} className="flex justify-between items-start text-xs border-b border-linen/30 pb-1.5 last:border-0 last:pb-0">
                                               <div>
@@ -1270,7 +1286,7 @@ export default function AdminDashboard({
                               </td>
                             </tr>
                           )}
-                        </>
+                        </Fragment>
                       )
                     })}
                   </tbody>

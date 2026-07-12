@@ -158,7 +158,11 @@ export default function CheckoutPage() {
                           item.name.toLowerCase().includes('ganna') ||
                           (item.category && item.category.toLowerCase().includes('cane'))
       if (!isSugarcane) {
-        const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+        const extraPrice = item.extra_cheese
+          ? (item.extra_cheese_price_paise !== undefined
+            ? item.extra_cheese_price_paise
+            : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+          : 0
         discountAmount += Math.round(0.10 * (item.price_paise + extraPrice) * item.quantity)
       }
     })
@@ -440,7 +444,11 @@ export default function CheckoutPage() {
                 >
                   <div className="space-y-3 mt-2">
                     {items.map((item) => {
-                      const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+                      const extraPrice = item.extra_cheese
+                        ? (item.extra_cheese_price_paise !== undefined
+                          ? item.extra_cheese_price_paise
+                          : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+                        : 0
                       const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                       return (
                         <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3 py-1">
@@ -719,7 +727,11 @@ export default function CheckoutPage() {
                 <h2 className="font-display text-lg text-cocoa mb-4">Order Summary</h2>
                 <div className="space-y-3.5 mb-5 max-h-[260px] overflow-y-auto pr-1 border-b border-linen/60 pb-4">
                   {items.map((item) => {
-                    const extraPrice = item.extra_cheese ? getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices) : 0
+                    const extraPrice = item.extra_cheese
+                      ? (item.extra_cheese_price_paise !== undefined
+                        ? item.extra_cheese_price_paise
+                        : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
+                      : 0
                     const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
                     return (
                       <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
