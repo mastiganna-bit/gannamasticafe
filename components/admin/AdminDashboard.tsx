@@ -1144,11 +1144,6 @@ export default function AdminDashboard({
         )}
       </div>
 
-          {/* Settings Tab */}
-      {dashboardTab === 'settings' && (
-        <StoreSettings />
-      )}
-
       {/* Confirmation Modal */}
           <ConfirmCompleteModal
             isOpen={!!confirmOrder}

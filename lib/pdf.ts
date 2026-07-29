@@ -32,7 +32,7 @@ export const generateOrderPDF = (order: Order) => {
   }
 
   doc.text(`Order Status: ${(order.status || 'Unknown').toUpperCase()}`, 14, currentY)
-  doc.text(`Payment: ${(order.payment_status || 'Paid').toUpperCase()}`, 105, currentY)
+  doc.text(`Payment: ${(order.status === 'pending' ? 'Pending' : 'Paid').toUpperCase()}`, 105, currentY)
   currentY += 10
   
   // Items Table
