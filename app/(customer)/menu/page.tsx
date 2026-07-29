@@ -48,8 +48,12 @@ export default async function MenuPage() {
       })
     : []
 
-  // Group by category
-  const categories = [
+  // Filter out system items
+  const displayItems = sortedItems.filter(i => i.category !== 'System')
+
+  // Group by category, dynamically pulling from DB but preserving specific top-level order
+  const dbCategories = Array.from(new Set(displayItems.map(i => i.category)))
+  const defaultCategoryOrder = [
     'The Cane Bar',
     'Refresher & Hot Brews',
     'Burger Binge',
@@ -60,6 +64,33 @@ export default async function MenuPage() {
     'Cheesy Sides & Bread Pizza',
     'Shake it up',
   ]
+  const newDynamicCategories = dbCategories.filter(cat => !defaultCategoryOrder.includes(cat))
+  const categories = [
+    ...defaultCategoryOrder.filter(cat => dbCategories.includes(cat)), 
+    ...newDynamicCategories
+  ]
 
-  return <MenuClientPage items={sortedItems} categories={categories} />
+  // Fetch cheese prices
+  const systemItem = menuItems?.find(i => i.category === 'System' && i.name === 'Extra Cheese Settings')
+  const cheesePrices = {
+    standard: 2000,
+    premiumPizzaSmall: 3000,
+    premiumPizzaOther: 5000,
+    specialItem: 3000
+  }
+
+  if (systemItem && systemItem.menu_item_sizes) {
+    const sizes = systemItem.menu_item_sizes as any[]
+    const std = sizes.find(s => s.size_label === 'Standard Price')
+    const premSmall = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
+    const premOther = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
+    const spec = sizes.find(s => s.size_label === 'Special Item Price')
+
+    if (std) cheesePrices.standard = std.price_paise
+    if (premSmall) cheesePrices.premiumPizzaSmall = premSmall.price_paise
+    if (premOther) cheesePrices.premiumPizzaOther = premOther.price_paise
+    if (spec) cheesePrices.specialItem = spec.price_paise
+  }
+
+  return <MenuClientPage items={displayItems} categories={categories} cheesePrices={cheesePrices} />
 }

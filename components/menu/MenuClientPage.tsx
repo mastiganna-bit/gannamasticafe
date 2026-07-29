@@ -10,9 +10,11 @@ import { cn } from '@/lib/utils'
 export default function MenuClientPage({
   items,
   categories,
+  cheesePrices,
 }: {
   items: MenuItem[]
   categories: string[]
+  cheesePrices: { standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number }
 }) {
   const [activeCategory, setActiveCategory] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
@@ -146,7 +148,7 @@ export default function MenuClientPage({
             {filtered.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filtered.map((item) => (
-                  <MenuCard key={item.id} item={item} />
+                  <MenuCard key={item.id} item={item} cheesePrices={cheesePrices} />
                 ))}
               </div>
             ) : (
@@ -180,7 +182,7 @@ export default function MenuClientPage({
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {catItems.map((item) => (
-                    <MenuCard key={item.id} item={item} />
+                    <MenuCard key={item.id} item={item} cheesePrices={cheesePrices} />
                   ))}
                 </div>
               </div>
@@ -192,7 +194,7 @@ export default function MenuClientPage({
             {filtered.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filtered.map((item) => (
-                  <MenuCard key={item.id} item={item} />
+                  <MenuCard key={item.id} item={item} cheesePrices={cheesePrices} />
                 ))}
               </div>
             ) : (

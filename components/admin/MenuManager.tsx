@@ -161,13 +161,70 @@ export default function MenuManager() {
     setEditingId(null)
   }
 
+  // Compress image before uploading
+  const compressImageFile = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = (event) => {
+        const img = new Image()
+        img.src = event.target?.result as string
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          // Maximum width or height
+          const MAX_SIZE = 800
+          let width = img.width
+          let height = img.height
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width
+              width = MAX_SIZE
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height
+              height = MAX_SIZE
+            }
+          }
+
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          ctx?.drawImage(img, 0, 0, width, height)
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                })
+                resolve(newFile)
+              } else {
+                reject(new Error('Canvas to Blob failed'))
+              }
+            },
+            'image/jpeg',
+            0.75 // 75% quality for good compression (KB size)
+          )
+        }
+        img.onerror = (err) => reject(err)
+      }
+      reader.onerror = (err) => reject(err)
+    })
+  }
+
   // Handle uploading image files and setting state
   const handleUploadImageFile = async (file: File, forNewItem = false) => {
     setUploadingImage(true)
-    const formData = new FormData()
-    formData.append('file', file)
-
+    
     try {
+      const compressedFile = await compressImageFile(file)
+      
+      const formData = new FormData()
+      formData.append('file', compressedFile)
+
       const res = await fetch('/api/admin/upload-image', {
         method: 'POST',
         body: formData
@@ -340,6 +397,27 @@ export default function MenuManager() {
       toast.error('Failed to save changes: ' + err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Delete item
+  const handleDeleteItem = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${name}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      toast.success(`"${name}" has been deleted.`)
+      fetchMenuItems()
+    } catch (err: any) {
+      toast.error('Failed to delete item: ' + err.message)
     }
   }
 
@@ -803,6 +881,14 @@ export default function MenuManager() {
                                   className="bg-cream hover:bg-linen border border-linen text-cocoa p-1.5 rounded-lg flex items-center justify-center transition-colors"
                                 >
                                   <Edit2 size={13} />
+                                </button>
+                                
+                                <button
+                                  onClick={() => handleDeleteItem(item.id, item.name)}
+                                  title="Delete item"
+                                  className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 p-1.5 rounded-lg flex items-center justify-center transition-colors"
+                                >
+                                  <Trash2 size={13} />
                                 </button>
                               </div>
                             </div>

@@ -8,7 +8,13 @@ import { MenuItem, MenuItemSize } from '@/lib/types'
 import { formatPrice, isExtraCheeseEligible, getExtraCheesePrice, cn } from '@/lib/utils'
 import { useCart } from '@/components/cart/CartProvider'
 
-export default function MenuCard({ item }: { item: MenuItem }) {
+export default function MenuCard({ 
+  item,
+  cheesePrices
+}: { 
+  item: MenuItem
+  cheesePrices?: { standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number }
+}) {
   const { addItem } = useCart()
   const [selectedSize, setSelectedSize] = useState<MenuItemSize>(() => {
     if (item.category === 'The Cane Bar') {
@@ -38,7 +44,11 @@ export default function MenuCard({ item }: { item: MenuItem }) {
   }
 
   const eligibleForExtraCheese = !!item.allow_extra_cheese && item.category !== 'Shake it up'
-  const extraCheesePrice = item.extra_cheese_price_paise || 0
+  
+  // Dynamic cheese price based on size
+  const extraCheesePrice = eligibleForExtraCheese 
+    ? getExtraCheesePrice(item.category || '', selectedSize.size_label, item.name, cheesePrices)
+    : 0
 
   const handleAdd = () => {
     addItem({
@@ -50,7 +60,7 @@ export default function MenuCard({ item }: { item: MenuItem }) {
       quantity: 1,
       image_path: displayImagePath,
       extra_cheese: extraCheese,
-      extra_cheese_price_paise: item.extra_cheese_price_paise,
+      extra_cheese_price_paise: extraCheesePrice,
       category: item.category,
     })
     // Reset option after adding to cart for fresh selections
@@ -123,59 +133,28 @@ export default function MenuCard({ item }: { item: MenuItem }) {
           </p>
         )}
 
-        {/* Size Selector or Single Price container aligned perfectly at the bottom */}
         {hasSizes ? (
-          <div className="mb-3 mt-auto relative">
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className={cn(
-                "flex items-center justify-between w-full text-left py-2 px-3 bg-cream-100 rounded-xl border text-[10px] xs:text-xs font-sans transition-all duration-200",
-                isExpanded
-                  ? "border-sage/40 bg-white ring-2 ring-sage/10"
-                  : "border-linen hover:border-sage/30 hover:bg-cream-200/50"
-              )}
-            >
-              <span className="text-cocoa-muted truncate mr-1 font-medium">
-                {selectedSize.size_label} — <span className="text-amber-cafe font-semibold">{formatPrice(selectedSize.price_paise + (extraCheese ? extraCheesePrice : 0))}</span>
-              </span>
-              <ChevronDown
-                size={12}
-                className={cn('text-cocoa-muted transition-transform shrink-0', isExpanded && 'rotate-180')}
-              />
-            </button>
-
-            <AnimatePresence>
-              {isExpanded && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -6 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -6 }}
-                  transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-1.5 border border-linen rounded-xl bg-white z-20 absolute left-0 right-0 shadow-modal max-h-48 overflow-y-auto"
+          <div className="mb-3 mt-auto">
+            <p className="text-[10px] text-cocoa-muted font-medium mb-1">Select Size:</p>
+            <div className="flex flex-wrap gap-2">
+              {item.menu_item_sizes.map((size) => (
+                <button
+                  key={size.id}
+                  onClick={() => setSelectedSize(size)}
+                  className={cn(
+                    "flex-1 min-w-[70px] py-1.5 px-2 rounded-lg border text-[10px] xs:text-xs font-sans transition-all duration-200 text-center cursor-pointer",
+                    selectedSize.id === size.id
+                      ? "border-sage bg-sage/10 text-sage font-bold shadow-sm"
+                      : "border-linen bg-cream-100 hover:border-sage/30 hover:bg-cream-200 text-cocoa-muted hover:text-cocoa font-medium"
+                  )}
                 >
-                  {item.menu_item_sizes.map((size) => (
-                    <button
-                      key={size.id}
-                      onClick={() => {
-                        setSelectedSize(size)
-                        setIsExpanded(false)
-                      }}
-                      className={cn(
-                        'flex justify-between items-center w-full px-3.5 py-2.5 text-[10px] xs:text-xs font-sans hover:bg-cream-100 transition-colors border-b border-linen/30 last:border-0',
-                        selectedSize.id === size.id && 'bg-sage/5 text-sage font-medium'
-                      )}
-                    >
-                      <span className={selectedSize.id === size.id ? 'text-sage font-semibold truncate mr-1' : 'text-cocoa truncate mr-1'}>
-                        {size.size_label}
-                      </span>
-                      <span className={selectedSize.id === size.id ? 'text-sage font-bold shrink-0' : 'text-amber-cafe font-semibold shrink-0'}>
-                        {formatPrice(size.price_paise + (extraCheese ? extraCheesePrice : 0))}
-                      </span>
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="block">{size.size_label}</div>
+                  <div className={selectedSize.id === size.id ? "text-sage" : "text-amber-cafe"}>
+                    {formatPrice(size.price_paise)}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="mb-3 mt-auto flex items-end justify-between pt-2 border-t border-linen/30">

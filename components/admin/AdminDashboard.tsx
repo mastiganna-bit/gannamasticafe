@@ -5,12 +5,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
 import { Order } from '@/lib/types'
 import { formatPrice, getExtraCheesePrice, parseAddressText } from '@/lib/utils'
-import { CheckCircle, Clock, ChefHat, Package, IndianRupee, Volume2, VolumeX, AlertCircle, RefreshCw, Flame, ShoppingBag, Search, Filter, ChevronDown, ChevronUp, Utensils, Store, Truck, X } from 'lucide-react'
+import { CheckCircle, Clock, ChefHat, Package, IndianRupee, Volume2, VolumeX, AlertCircle, RefreshCw, Flame, ShoppingBag, Search, Filter, ChevronDown, ChevronUp, Utensils, Store, Truck, X, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ConfirmCompleteModal from './ConfirmCompleteModal'
 import MenuManager from './MenuManager'
 import dynamic from 'next/dynamic'
 
+import StoreSettings from './StoreSettings'
 const MapComponent = dynamic(() => import('../delivery/MapComponent'), { ssr: false })
 const AdminDriversMapComponent = dynamic(() => import('./AdminDriversMapComponent'), { ssr: false })
 
@@ -66,10 +67,20 @@ export default function AdminDashboard({
   const [isCompleting, setIsCompleting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [adminSoundEnabled, setAdminSoundEnabled] = useState(false)
-  const [dashboardTab, setDashboardTab] = useState<'orders' | 'history' | 'menu' | 'drivers'>('orders')
+  const [dashboardTab, setDashboardTab] = useState<'orders' | 'history' | 'menu' | 'drivers' | 'settings'>('orders')
   const [deliveryProfiles, setDeliveryProfiles] = useState<any[]>([])
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [focusDriverId, setFocusDriverId] = useState<string | null>(null)
+  
+  // Add Delivery Partner State
+  const [newDriverName, setNewDriverName] = useState('')
+  const [newDriverPhone, setNewDriverPhone] = useState('')
+  const [newDriverVehicle, setNewDriverVehicle] = useState('')
+  const [isAddingDriver, setIsAddingDriver] = useState(false)
+  const [isOtpStep, setIsOtpStep] = useState(false)
+  const [driverOtp, setDriverOtp] = useState('')
+  const [verificationId, setVerificationId] = useState('')
+
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const [cheesePrices, setCheesePrices] = useState({
     standard: 2000,
@@ -574,6 +585,78 @@ export default function AdminDashboard({
   }
   const prepSummary = getPrepSummary()
 
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newDriverName || !newDriverPhone || !newDriverVehicle) {
+      toast.error('All fields are required.')
+      return
+    }
+
+    setIsAddingDriver(true)
+    try {
+      const res = await fetch('/api/admin/send-partner-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: newDriverPhone })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send OTP')
+
+      if (data.verificationId) {
+        setVerificationId(data.verificationId)
+      }
+
+      toast.success('OTP sent to driver via MessageCentral!')
+      setIsOtpStep(true)
+    } catch (err: any) {
+      toast.error(err.message || 'Error sending OTP')
+    } finally {
+      setIsAddingDriver(false)
+    }
+  }
+
+  const handleVerifyAndAddDriver = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!driverOtp || !verificationId) {
+      toast.error('OTP and Verification ID are required.')
+      return
+    }
+
+    setIsAddingDriver(true)
+    try {
+      const res = await fetch('/api/admin/add-partner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: newDriverName,
+          phone: newDriverPhone,
+          vehicleNumber: newDriverVehicle,
+          otp: driverOtp,
+          verificationId
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to add driver')
+
+      toast.success('Delivery partner added successfully!')
+      setNewDriverName('')
+      setNewDriverPhone('')
+      setNewDriverVehicle('')
+      setDriverOtp('')
+      setVerificationId('')
+      setIsOtpStep(false)
+      
+      // Refresh the profiles list
+      refreshDashboardData()
+    } catch (err: any) {
+      toast.error(err.message || 'Error verifying OTP and adding driver')
+    } finally {
+      setIsAddingDriver(false)
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       
@@ -622,6 +705,17 @@ export default function AdminDashboard({
         >
           <ShoppingBag size={14} />
           Menu Manager
+        </button>
+        <button
+          onClick={() => setDashboardTab('settings')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg font-sans text-xs font-bold transition-all cursor-pointer ${
+            dashboardTab === 'settings'
+              ? 'bg-sage text-white shadow-sm'
+              : 'text-cocoa-muted hover:text-cocoa'
+          }`}
+        >
+          <Settings size={14} />
+          Settings
         </button>
       </div>
 
@@ -1050,7 +1144,12 @@ export default function AdminDashboard({
         )}
       </div>
 
-          {/* Confirmation Modal */}
+          {/* Settings Tab */}
+      {dashboardTab === 'settings' && (
+        <StoreSettings />
+      )}
+
+      {/* Confirmation Modal */}
           <ConfirmCompleteModal
             isOpen={!!confirmOrder}
             onClose={() => setConfirmOrder(null)}
@@ -1307,6 +1406,87 @@ export default function AdminDashboard({
             </p>
           </div>
 
+          {/* Add Delivery Partner Card */}
+          <div className="bg-white border border-linen rounded-xl2 p-5 shadow-card">
+            <h3 className="font-display text-lg text-cocoa mb-3">Add Delivery Partner</h3>
+            {isOtpStep ? (
+              <form onSubmit={handleVerifyAndAddDriver} className="flex flex-col md:flex-row gap-3 items-end">
+                <div className="flex-1 w-full">
+                  <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Enter OTP sent to driver</label>
+                  <input 
+                    type="text" 
+                    required
+                    maxLength={6}
+                    value={driverOtp}
+                    onChange={e => setDriverOtp(e.target.value)}
+                    className="w-full bg-cream border border-linen rounded-xl p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage font-mono tracking-widest font-bold"
+                    placeholder="e.g. 123456"
+                  />
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsOtpStep(false)}
+                    className="flex-1 md:flex-none bg-white border border-linen hover:bg-cream text-cocoa font-sans text-xs font-bold py-3 px-6 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isAddingDriver}
+                    className="flex-1 md:flex-none bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 px-6 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    {isAddingDriver ? 'Verifying...' : 'Verify & Add'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleSendOtp} className="flex flex-col md:flex-row gap-3 items-end">
+                <div className="flex-1 w-full">
+                  <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={newDriverName}
+                    onChange={e => setNewDriverName(e.target.value)}
+                    className="w-full bg-cream border border-linen rounded-xl p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                    placeholder="e.g. Rahul Sharma"
+                  />
+                </div>
+                <div className="flex-1 w-full">
+                  <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Phone Number</label>
+                  <input 
+                    type="tel" 
+                    required
+                    maxLength={10}
+                    value={newDriverPhone}
+                    onChange={e => setNewDriverPhone(e.target.value)}
+                    className="w-full bg-cream border border-linen rounded-xl p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                    placeholder="e.g. 9876543210"
+                  />
+                </div>
+                <div className="flex-1 w-full">
+                  <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Vehicle Details</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={newDriverVehicle}
+                    onChange={e => setNewDriverVehicle(e.target.value)}
+                    className="w-full bg-cream border border-linen rounded-xl p-2.5 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
+                    placeholder="e.g. DL-3C-AB-1234"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isAddingDriver}
+                  className="w-full md:w-auto bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3 px-6 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  {isAddingDriver ? 'Sending OTP...' : 'Send OTP'}
+                </button>
+              </form>
+            )}
+          </div>
+
           {/* Live Map */}
           <div ref={mapContainerRef} className="bg-white border border-linen rounded-xl2 p-5 shadow-card">
             <h3 className="font-display text-lg text-cocoa mb-3">Live Fleet Location Map</h3>
@@ -1435,6 +1615,10 @@ export default function AdminDashboard({
 
       {dashboardTab === 'menu' && (
         <MenuManager />
+      )}
+
+      {dashboardTab === 'settings' && (
+        <StoreSettings />
       )}
     </div>
   )

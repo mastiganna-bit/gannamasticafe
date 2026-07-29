@@ -36,18 +36,6 @@ export default function LoginPage() {
     }
   }, [resendTimer])
 
-  const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        queryParams: {
-          prompt: 'select_account'
-        }
-      },
-    })
-  }
-
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (phoneNumber.length !== 10) {
@@ -141,21 +129,6 @@ export default function LoginPage() {
           <p className="font-sans text-sm text-cocoa-muted">Sign in to track your orders and manage your account</p>
         </div>
 
-        {/* Google Login */}
-        <button
-          onClick={handleGoogleLogin}
-          className="w-full flex items-center justify-center gap-3 border border-linen bg-cream rounded-xl py-3.5 px-4 font-sans text-sm font-medium text-cocoa hover:bg-cream-200 hover:border-sage/20 transition-all shadow-2xs hover:shadow-sm mb-4"
-        >
-          <Chrome size={18} className="text-cocoa" />
-          Continue with Google
-        </button>
-
-        {/* Visual Divider */}
-        <div className="relative flex py-3 items-center">
-          <div className="flex-grow border-t border-linen/60"></div>
-          <span className="flex-shrink mx-3 text-[10px] font-sans font-medium text-cocoa-muted/65 uppercase tracking-wider">or sign in with phone</span>
-          <div className="flex-grow border-t border-linen/60"></div>
-        </div>
 
         {/* Phone Login Form */}
         <div className="mb-6">
@@ -273,7 +246,7 @@ export default function LoginPage() {
         </div>
 
         <p className="font-sans text-[10px] text-cocoa-muted/70 leading-relaxed mb-4">
-          By signing in, you agree to our terms of service and privacy policy. Secured with Google & SMS Authentication.
+          By signing in, you agree to our terms of service and privacy policy. Secured with SMS Authentication.
         </p>
 
         {/* Reviewer / Tester Login Bypass */}

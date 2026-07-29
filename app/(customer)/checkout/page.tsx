@@ -38,6 +38,11 @@ export default function CheckoutPage() {
   const supabase = createClient()
 
   const [cheesePrices, setCheesePrices] = useState<{ standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number } | undefined>(undefined)
+  const [storeSettings, setStoreSettings] = useState<{ platform_fee: number; packing_charge_per_item: number; delivery_discount: number }>({
+    platform_fee: 6, // default 6 rupees
+    packing_charge_per_item: 5, // default 5 rupees
+    delivery_discount: 0, // default 0
+  })
 
   // Fetch dynamic cheese prices
   useEffect(() => {
@@ -69,6 +74,27 @@ export default function CheckoutPage() {
       }
     }
     fetchCheesePrices()
+
+    const fetchStoreSettings = async () => {
+      try {
+        const { data } = await supabase
+          .from('store_settings')
+          .select('*')
+          .limit(1)
+          .single()
+        
+        if (data) {
+          setStoreSettings({
+            platform_fee: Number(data.platform_fee),
+            packing_charge_per_item: Number(data.packing_charge_per_item),
+            delivery_discount: Number(data.delivery_discount),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to fetch store settings:', err)
+      }
+    }
+    fetchStoreSettings()
   }, [supabase])
 
 
@@ -140,15 +166,16 @@ export default function CheckoutPage() {
       (item.category && item.category.toLowerCase().includes('cane'))
     )
     .reduce((sum, item) => sum + item.quantity, 0)
-  const packagingCharges = sugarcaneQty * 500 // ₹5 per sugarcane item in paise
+  const packagingCharges = sugarcaneQty * (storeSettings.packing_charge_per_item * 100) // convert to paise
 
   // Flat Platform Fee
-  const platformFee = 600 // ₹6 flat in paise
+  const platformFee = storeSettings.platform_fee * 100 // convert to paise
 
   // Delivery Charges: ₹50 under ₹299 (paise threshold: 29900), free for ₹300+ (30000+)
-  const deliveryCharges = deliveryOption === 'delivery'
+  const baseDeliveryCharge = deliveryOption === 'delivery'
     ? (subtotalPrice < 29900 ? 5000 : 0)
     : 0
+  const deliveryCharges = Math.max(0, baseDeliveryCharge - (storeSettings.delivery_discount * 100))
 
   // 10% Discount on non-sugarcane items for self-pickup
   let discountAmount = 0
@@ -220,9 +247,15 @@ export default function CheckoutPage() {
       toast.error('Please enter a valid 10-digit phone number')
       return
     }
-    if (deliveryOption === 'delivery' && !address) {
-      toast.error('Please provide a delivery address!')
-      return
+    if (deliveryOption === 'delivery') {
+      if (!address) {
+        toast.error('Please provide a delivery address!')
+        return
+      }
+      if (!address.toLowerCase().includes('rohtak')) {
+        toast.error('Delivery is currently only available in Rohtak area. Please change your address or choose self-pickup.', { duration: 6000 })
+        return
+      }
     }
 
     setIsLoading(true)
@@ -401,6 +434,8 @@ export default function CheckoutPage() {
     )
   }
 
+  const isAddressInvalid = deliveryOption === 'delivery' && address.trim().length > 0 && !address.toLowerCase().includes('rohtak')
+
   return (
     <>
       <Script
@@ -486,7 +521,7 @@ export default function CheckoutPage() {
                       </div>
                       {packagingCharges > 0 && (
                         <div className="flex justify-between">
-                          <span>Sugarcane Packaging Fee (₹5/item)</span>
+                          <span>Sugarcane Packaging Fee (₹{storeSettings.packing_charge_per_item}/item)</span>
                           <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
                         </div>
                       )}
@@ -648,9 +683,18 @@ export default function CheckoutPage() {
                           value={address}
                           onChange={(e) => setAddress(e.target.value)}
                           placeholder="Flat No, Apartment, Street name, and prominent Landmark * (GPS link will auto-append here if clicked)"
-                          className="input-field resize-none h-24"
+                          className={cn("input-field resize-none h-24", isAddressInvalid && "border-red-500/50 focus:border-red-500 focus:ring-red-500/20")}
                           required
                         />
+                        {isAddressInvalid && (
+                          <motion.p 
+                            initial={{ opacity: 0, height: 0 }} 
+                            animate={{ opacity: 1, height: 'auto' }} 
+                            className="text-xs text-red-500 font-sans font-medium"
+                          >
+                            ⚠️ Delivery is currently only available in Rohtak area.
+                          </motion.p>
+                        )}
 
                         {showMap && deliveryLat && deliveryLng && (
                           <div className="space-y-1.5 mt-2">
@@ -698,8 +742,11 @@ export default function CheckoutPage() {
 
                 <button
                   type="submit"
-                  disabled={isLoading}
-                  className="btn-primary w-full py-3.5 text-sm xs:text-base flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-md"
+                  disabled={isLoading || isAddressInvalid}
+                  className={cn(
+                    "btn-primary w-full py-3.5 text-sm xs:text-base flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-md transition-all",
+                    isAddressInvalid && "opacity-50 grayscale cursor-not-allowed hover:shadow-sm"
+                  )}
                 >
                   {isLoading ? (
                     <span className="flex items-center gap-2">
@@ -770,7 +817,7 @@ export default function CheckoutPage() {
                   </div>
                   {packagingCharges > 0 && (
                     <div className="flex justify-between items-center">
-                      <span>Sugarcane Packaging Fee (₹5/item)</span>
+                      <span>Sugarcane Packaging Fee (₹{storeSettings.packing_charge_per_item}/item)</span>
                       <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
                     </div>
                   )}

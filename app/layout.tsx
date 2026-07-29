@@ -51,8 +51,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${cormorant.variable} ${dmSerif.variable} ${dmSans.variable}`}>
-      <body className="bg-cream font-sans text-cocoa antialiased">
+    <html lang="en" className={`${cormorant.variable} ${dmSerif.variable} ${dmSans.variable}`} suppressHydrationWarning>
+      <body className="bg-cream font-sans text-cocoa antialiased" suppressHydrationWarning>
         {children}
         <Toaster
           position="top-center"

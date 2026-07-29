@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { generateOrderPDF } from '@/lib/pdf'
 
 const MapComponent = dynamic(() => import('@/components/delivery/MapComponent'), { ssr: false })
 
@@ -1040,9 +1041,22 @@ export default function AccountClientPage({
                             )}
                           </div>
 
-                          <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
-                            <span className="font-sans text-cocoa-muted">Total</span>
-                            <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                          <div className="border-t border-linen pt-2 flex flex-col gap-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-sans text-cocoa-muted">Total</span>
+                              <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                            </div>
+                            {order.status !== 'cancelled' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  generateOrderPDF(order)
+                                }}
+                                className="w-full mt-1 bg-cream-100 hover:bg-cream-200 text-cocoa border border-linen font-sans text-[10px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
+                              >
+                                📄 Download Bill
+                              </button>
+                            )}
                           </div>
                         </motion.div>
                       )
@@ -1096,9 +1110,22 @@ export default function AccountClientPage({
                             )}
                           </div>
 
-                          <div className="border-t border-linen pt-2 flex justify-between items-center text-xs">
-                            <span className="font-sans text-cocoa-muted">Total</span>
-                            <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                          <div className="border-t border-linen pt-2 flex flex-col gap-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-sans text-cocoa-muted">Total</span>
+                              <span className="font-sans font-bold text-cocoa">{formatPrice(order.total_paise)}</span>
+                            </div>
+                            {order.status !== 'cancelled' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  generateOrderPDF(order)
+                                }}
+                                className="w-full mt-1 bg-cream-100 hover:bg-cream-200 text-cocoa border border-linen font-sans text-[10px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
+                              >
+                                📄 Download Bill
+                              </button>
+                            )}
                           </div>
                         </motion.div>
                       )

@@ -57,12 +57,6 @@ export default function DeliveryClientPage({
   const supabase = createClient()
   const [profile, setProfile] = useState<DriverProfile | null>(initialProfile)
   
-  // Registration Form State
-  const [regName, setRegName] = useState('')
-  const [regPhone, setRegPhone] = useState('')
-  const [regVehicle, setRegVehicle] = useState('')
-  const [isRegistering, setIsRegistering] = useState(false)
-
   // Orders State
   const [unassigned, setUnassigned] = useState<Order[]>(initialUnassigned)
   const [active, setActive] = useState<Order[]>(initialActive)
@@ -216,39 +210,6 @@ export default function DeliveryClientPage({
     }
   }, [active, watchId, user.id, supabase])
 
-  // Handle Driver Registration
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!regName || !regPhone || !regVehicle) {
-      toast.error('All profile fields are required!')
-      return
-    }
-
-    setIsRegistering(true)
-    try {
-      const { data, error } = await supabase
-        .from('delivery_profiles')
-        .insert({
-          user_id: user.id,
-          full_name: regName,
-          phone: regPhone,
-          vehicle_number: regVehicle,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      setProfile(data as DriverProfile)
-      toast.success('Delivery Profile created successfully!')
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create profile')
-    } finally {
-      setIsRegistering(false)
-    }
-  }
-
   // Handle Order Status Transitions via secure API
   const handleUpdateStatus = async (orderId: string, action: 'accept' | 'pickup' | 'deliver', otp?: string) => {
     setActionLoading(orderId)
@@ -369,54 +330,19 @@ export default function DeliveryClientPage({
             <div className="w-12 h-12 bg-sage/10 text-sage rounded-full flex items-center justify-center mx-auto mb-3">
               <Truck size={24} />
             </div>
-            <h2 className="font-serif text-xl text-cocoa">Agent Onboarding</h2>
-            <p className="font-sans text-xs text-cocoa-muted mt-1">Register your agent details below to begin accepting food deliveries.</p>
+            <h2 className="font-serif text-xl text-cocoa">Access Denied</h2>
+            <p className="font-sans text-xs text-cocoa-muted mt-1">Please contact the cafe admin to register you as a delivery partner.</p>
           </div>
-
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Full Name</label>
-              <input 
-                type="text" 
-                required
-                value={regName}
-                onChange={e => setRegName(e.target.value)}
-                className="w-full bg-cream border border-linen rounded-xl p-3 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
-                placeholder="e.g. Rahul Sharma"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Phone Number</label>
-              <input 
-                type="tel" 
-                required
-                maxLength={10}
-                value={regPhone}
-                onChange={e => setRegPhone(e.target.value)}
-                className="w-full bg-cream border border-linen rounded-xl p-3 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
-                placeholder="e.g. 9876543210"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-sans font-bold text-cocoa uppercase tracking-wider mb-1">Vehicle License Plate Number</label>
-              <input 
-                type="text" 
-                required
-                value={regVehicle}
-                onChange={e => setRegVehicle(e.target.value)}
-                className="w-full bg-cream border border-linen rounded-xl p-3 text-xs text-cocoa focus:outline-none focus:ring-1 focus:ring-sage"
-                placeholder="e.g. DL-3C-AB-1234"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isRegistering}
-              className="w-full bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3.5 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer"
-            >
-              {isRegistering ? 'Registering...' : 'Register Profile & Enter Dashboard'}
-            </button>
-          </form>
+          
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              window.location.href = '/'
+            }}
+            className="w-full bg-sage hover:bg-sage-dark text-white font-sans text-xs font-bold py-3.5 rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer mt-4"
+          >
+            Sign Out
+          </button>
         </motion.div>
       </div>
     )
