@@ -27,6 +27,48 @@ grant execute on function public.is_admin() to authenticated, service_role;
 alter table public.profiles add column if not exists role text default 'customer';
 alter table public.profiles add column if not exists phone_verified_at timestamptz;
 alter table public.profiles add column if not exists updated_at timestamptz default now();
+
+-- Normalize legacy Indian phone formats before enforcing one phone per account.
+-- Older deployments allowed duplicate profile phones even though Auth did not.
+update public.profiles
+set phone = '+91' || right(regexp_replace(phone, '\D', '', 'g'), 10),
+    updated_at = now()
+where phone is not null
+  and (
+    length(regexp_replace(phone, '\D', '', 'g')) = 10
+    or (
+      length(regexp_replace(phone, '\D', '', 'g')) = 12
+      and regexp_replace(phone, '\D', '', 'g') like '91%'
+    )
+  );
+
+-- Preserve every legacy account and all of its references. When duplicates
+-- exist, retain the phone on the account that already owns real operational
+-- data (or the verified/most recently used account) and clear only the
+-- non-canonical profile phone so the unique index can be created safely.
+with ranked_profiles as (
+  select
+    p.id,
+    row_number() over (
+      partition by p.phone
+      order by
+        (u.phone = p.phone) desc nulls last,
+        (p.phone_verified_at is not null) desc,
+        (exists (select 1 from public.orders o where o.user_id = p.id)) desc,
+        (exists (select 1 from public.delivery_profiles d where d.user_id = p.id)) desc,
+        u.last_sign_in_at desc nulls last,
+        p.id
+    ) as phone_rank
+  from public.profiles p
+  left join auth.users u on u.id = p.id
+  where p.phone is not null
+)
+update public.profiles p
+set phone = null,
+    updated_at = now()
+from ranked_profiles r
+where p.id = r.id and r.phone_rank > 1;
+
 create unique index if not exists profiles_phone_unique
   on public.profiles (phone) where phone is not null;
 
