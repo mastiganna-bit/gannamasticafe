@@ -1,115 +1,81 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { z } from 'zod'
 import { validateOtpViaMessageCentral } from '@/lib/message-central'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdmin } from '@/lib/server/auth'
+import { apiErrorResponse, ApiError } from '@/lib/server/errors'
+import { indianPhoneSchema } from '@/lib/server/validation'
+import { passwordSchema } from '@/lib/server/validation'
+
+const requestSchema = z.object({
+  fullName: z.string().trim().min(2).max(80),
+  phone: indianPhoneSchema,
+  vehicleNumber: z.string().trim().min(2).max(30),
+  otp: z.string().regex(/^\d{4,8}$/),
+  verificationId: z.string().min(8).max(200),
+  password: passwordSchema,
+})
 
 export async function POST(req: Request) {
   try {
-    const { fullName, phone, vehicleNumber, otp, verificationId } = await req.json()
-    
-    if (!otp || !verificationId) {
-      return NextResponse.json({ error: 'OTP and verificationId are required.' }, { status: 400 })
+    const adminSession = await requireAdmin()
+    const input = requestSchema.parse(await req.json())
+    const verification = await validateOtpViaMessageCentral(input.verificationId, input.otp)
+    if (verification?.responseCode !== 200 && verification?.status !== 200) {
+      throw new ApiError(400, 'The verification code is invalid or expired.', 'INVALID_OTP')
     }
 
-    // Ensure phone number matches standard format (+91 prefix if missing)
-    let formattedPhone = phone
-    if (!formattedPhone.startsWith('+')) {
-      formattedPhone = '+91' + formattedPhone
-    }
-
-    // 1. Validate the OTP via MessageCentral
-    const mcResponse = await validateOtpViaMessageCentral(verificationId, otp)
-    
-    // According to MessageCentral VerifyNow API, a successful validation returns status 200 or responseCode 200
-    // Check for success criteria
-    if (mcResponse?.responseCode !== 200 && mcResponse?.status !== 200) {
-      console.error('MessageCentral Validation Failed:', mcResponse)
-      return NextResponse.json({ error: 'Invalid OTP or verification expired.' }, { status: 400 })
-    }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-    if (!supabaseServiceKey) {
-      return NextResponse.json({ error: 'Server misconfiguration: missing service key.' }, { status: 500 })
-    }
-
-    // Create a service client with admin privileges
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    })
-
-    // 2. Find or Create the user in Supabase
-    let targetUserId = null
-
-    // Check profiles table first (without prefix)
-    const phoneNoPrefix = formattedPhone.replace('+91', '')
-    const { data: profilesNoPrefix } = await supabaseAdmin
+    const supabase = createAdminClient()
+    const nationalPhone = input.phone.slice(3)
+    const { data: profiles, error: lookupError } = await supabase
       .from('profiles')
       .select('id')
-      .eq('phone', phoneNoPrefix)
+      .in('phone', [input.phone, nationalPhone])
       .limit(1)
+    if (lookupError) throw lookupError
 
-    if (profilesNoPrefix && profilesNoPrefix.length > 0) {
-      targetUserId = profilesNoPrefix[0].id
-    } else {
-      // Check profiles table (with prefix)
-      const { data: profilesWithPrefix } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('phone', formattedPhone)
-        .limit(1)
-
-      if (profilesWithPrefix && profilesWithPrefix.length > 0) {
-        targetUserId = profilesWithPrefix[0].id
-      }
-    }
-
-    // If user doesn't exist, create them
-    if (!targetUserId) {
-      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        phone: formattedPhone,
+    let userId = profiles?.[0]?.id as string | undefined
+    if (!userId) {
+      const { data, error } = await supabase.auth.admin.createUser({
+        phone: input.phone,
         phone_confirm: true,
-        user_metadata: { role: 'delivery', full_name: fullName }
+        password: input.password,
+        user_metadata: { role: 'driver', full_name: input.fullName },
       })
-
-      if (createError) {
-        // Fallback in case of race condition or if phone exists in auth but not profiles
-        if (createError.message.includes('already exists')) {
-          return NextResponse.json({ error: 'User phone already exists in auth but missing from profiles table. Please contact support.' }, { status: 400 })
-        }
-        return NextResponse.json({ error: createError.message }, { status: 400 })
-      }
-      
-      targetUserId = newUser.user.id
-    } else {
-      // Update role if user already existed
-      await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-        user_metadata: { role: 'delivery' }
-      })
+      if (error || !data.user) throw new ApiError(400, error?.message || 'Unable to create delivery partner.')
+      userId = data.user.id
     }
 
-    // 3. Insert into delivery_profiles
-    const { error: profileError } = await supabaseAdmin
-      .from('delivery_profiles')
-      .upsert({
-        user_id: targetUserId,
-        full_name: fullName,
-        phone: phoneNoPrefix,
-        vehicle_number: vehicleNumber,
-        is_active: true
-      })
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+      phone: input.phone,
+      phone_confirm: true,
+      password: input.password,
+      user_metadata: { role: 'driver', full_name: input.fullName },
+    })
+    if (authError) throw authError
 
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 400 })
-    }
+    const { error: profileError } = await supabase.from('profiles').update({
+      full_name: input.fullName,
+      phone: input.phone,
+      role: 'driver',
+    }).eq('id', userId)
+    if (profileError) throw profileError
 
-    return NextResponse.json({ success: true, message: 'Partner added successfully!' })
-    
-  } catch (err: any) {
-    console.error('Add partner error:', err)
-    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
+    const { error: driverError } = await supabase.from('delivery_profiles').upsert({
+      user_id: userId,
+      full_name: input.fullName,
+      phone: input.phone,
+      vehicle_number: input.vehicleNumber,
+      is_active: true,
+      is_approved: true,
+      approved_by: adminSession.user.id,
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+    if (driverError) throw driverError
+
+    return NextResponse.json({ success: true, message: 'Delivery partner approved.' })
+  } catch (error) {
+    return apiErrorResponse(error)
   }
 }

@@ -1,312 +1,235 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { motion } from 'framer-motion'
-import { Chrome, Phone, ChevronLeft } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { FormEvent, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { Eye, EyeOff, Loader2, LocateFixed, LockKeyhole, Phone, UserRound } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { createClient } from '@/lib/supabase/client'
+
+type Mode = 'login' | 'signup' | 'forgot'
+type Step = 'details' | 'otp'
+
+const normalizePhone = (value: string) => `+91${value.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').slice(-10)}`
 
 export default function LoginPage() {
-  const [showTesterLogin, setShowTesterLogin] = useState(false)
-  const [testerEmail, setTesterEmail] = useState('')
-  const [testerPassword, setTesterPassword] = useState('')
-  const [isTesterLoading, setIsTesterLoading] = useState(false)
-
-  // Phone Login State
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [countryCode, setCountryCode] = useState('91')
-  const [otpCode, setOtpCode] = useState('')
-  const [verificationId, setVerificationId] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [step, setStep] = useState<'phone' | 'otp'>('phone')
-  const [isPhoneLoading, setIsPhoneLoading] = useState(false)
-  const [resendTimer, setResendTimer] = useState(0)
-
-  const supabase = createClient()
   const router = useRouter()
+  const [mode, setMode] = useState<Mode>('login')
+  const [step, setStep] = useState<Step>('details')
+  const [busy, setBusy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [challengeId, setChallengeId] = useState('')
+  const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [otp, setOtp] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [house, setHouse] = useState('')
+  const [area, setArea] = useState('')
+  const [landmark, setLandmark] = useState('')
+  const [city, setCity] = useState('Rohtak')
+  const [postalCode, setPostalCode] = useState('')
+  const [latitude, setLatitude] = useState<number | null>(null)
+  const [longitude, setLongitude] = useState<number | null>(null)
 
-  // Countdown timer for OTP resend
   useEffect(() => {
-    if (resendTimer > 0) {
-      const interval = setInterval(() => {
-        setResendTimer((prev) => prev - 1)
-      }, 1000)
-      return () => clearInterval(interval)
-    }
-  }, [resendTimer])
+    if (new URLSearchParams(window.location.search).get('mode') === 'forgot') setMode('forgot')
+  }, [])
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (phoneNumber.length !== 10) {
-      toast.error('Please enter a valid 10-digit mobile number')
-      return
+  const redirectAfterLogin = async () => {
+    const next = new URLSearchParams(window.location.search).get('next')
+    if (next?.startsWith('/')) router.replace(next)
+    else {
+      const { data } = await createClient().from('profiles').select('is_admin,role').single()
+      router.replace(data?.is_admin || data?.role === 'admin' ? '/admin' : data?.role === 'driver' ? '/delivery' : '/account')
     }
-    setIsPhoneLoading(true)
+    router.refresh()
+  }
+
+  const switchMode = (next: Mode) => {
+    setMode(next)
+    setStep('details')
+    setOtp('')
+    setChallengeId('')
+  }
+
+  const login = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
     try {
-      const res = await fetch('/api/auth/send-otp', {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithPassword({ phone: normalizePhone(phone), password })
+      if (error) throw new Error('Incorrect mobile number or password.')
+      toast.success('Welcome back!')
+      await redirectAfterLogin()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to log in.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const locate = () => {
+    if (!navigator.geolocation) return toast.error('Location is not supported on this device.')
+    setBusy(true)
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLatitude(coords.latitude)
+        setLongitude(coords.longitude)
+        toast.success('Delivery location detected.')
+        setBusy(false)
+      },
+      () => {
+        toast.error('Location permission was not granted. Please try again.')
+        setBusy(false)
+      },
+      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 }
+    )
+  }
+
+  const sendOtp = async (event: FormEvent) => {
+    event.preventDefault()
+    if (phone.replace(/\D/g, '').length !== 10) return toast.error('Enter a valid 10-digit mobile number.')
+    if (mode === 'signup') {
+      if (password !== confirmPassword) return toast.error('Passwords do not match.')
+      if (latitude === null || longitude === null) return toast.error('Please detect your delivery location.')
+    }
+    setBusy(true)
+    try {
+      const response = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ countryCode, mobileNumber: phoneNumber })
+        body: JSON.stringify({ phone: normalizePhone(phone), purpose: mode === 'signup' ? 'signup' : 'password_reset' }),
       })
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        toast.error(data.error || 'Failed to send OTP')
-      } else {
-        setVerificationId(data.verificationId)
-        setStep('otp')
-        setResendTimer(60)
-        toast.success('OTP sent successfully!')
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('An error occurred. Please try again.')
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to send verification code.')
+      setChallengeId(result.challengeId)
+      setStep('otp')
+      toast.success('Verification code sent.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to send verification code.')
     } finally {
-      setIsPhoneLoading(false)
+      setBusy(false)
     }
   }
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (otpCode.length < 4) {
-      toast.error('Please enter the OTP code')
-      return
-    }
-    setIsPhoneLoading(true)
+  const verifyAndContinue = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
     try {
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          countryCode,
-          mobileNumber: phoneNumber,
-          otpCode,
-          verificationId,
-          fullName
-        })
+      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/reset-password'
+      const payload = mode === 'signup'
+        ? {
+            challengeId,
+            otp,
+            phone: normalizePhone(phone),
+            password,
+            fullName,
+            address: {
+              label: 'Home', recipientName: fullName, phone: normalizePhone(phone), house, area, landmark,
+              city, postalCode, latitude, longitude, isDefault: true,
+            },
+          }
+        : { challengeId, otp, phone: normalizePhone(phone), password }
+      const response = await fetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        toast.error(data.error || 'Invalid OTP code')
-      } else {
-        toast.success('Successfully logged in!')
-        window.location.href = '/account'
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('An error occurred during verification.')
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Verification failed.')
+
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithPassword({ phone: normalizePhone(phone), password })
+      if (error) throw new Error('Password saved. Please use it to log in.')
+      toast.success(mode === 'signup' ? 'Account created successfully!' : 'Password reset successfully!')
+      await redirectAfterLogin()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Verification failed.')
     } finally {
-      setIsPhoneLoading(false)
+      setBusy(false)
     }
   }
 
-  const handleTesterLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsTesterLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({
-      email: testerEmail,
-      password: testerPassword,
-    })
-    setIsTesterLoading(false)
-
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Successfully logged in as Tester')
-      window.location.href = '/account'
-    }
-  }
+  const inputClass = 'w-full rounded-xl border border-linen bg-white px-4 py-3 text-sm text-cocoa outline-none transition focus:border-sage focus:ring-2 focus:ring-sage/15'
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 pt-16">
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white border border-linen rounded-2xl p-8 md:p-10 max-w-sm w-full shadow-card text-center"
-      >
-        <div className="mb-6">
-          <h1 className="font-serif text-3xl text-cocoa font-light mb-2">Welcome back</h1>
-          <p className="font-sans text-sm text-cocoa-muted">Sign in to track your orders and manage your account</p>
+    <main className="min-h-[calc(100vh-80px)] bg-cream px-4 py-10">
+      <div className="mx-auto max-w-lg rounded-3xl border border-linen bg-white p-6 shadow-card sm:p-8">
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-sage/10 text-sage">
+            {mode === 'signup' ? <UserRound /> : mode === 'forgot' ? <LockKeyhole /> : <Phone />}
+          </div>
+          <h1 className="font-display text-3xl text-cocoa">
+            {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset your password'}
+          </h1>
+          <p className="mt-2 text-sm text-cocoa-muted">
+            {step === 'otp' ? `Enter the code sent to +91 ${phone}` : mode === 'login' ? 'Login with your mobile number and password.' : 'Your details are saved securely for faster ordering.'}
+          </p>
         </div>
 
+        {step === 'otp' ? (
+          <form onSubmit={verifyAndContinue} className="space-y-4">
+            <label className="block text-sm font-semibold text-cocoa">6-digit verification code
+              <input className={`${inputClass} mt-2 text-center text-xl tracking-[0.35em]`} inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))} required />
+            </label>
+            <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy || otp.length < 4}>
+              {busy && <Loader2 size={16} className="animate-spin" />} Verify and continue
+            </button>
+            <button type="button" className="w-full text-sm font-medium text-sage" onClick={() => setStep('details')}>Change details</button>
+          </form>
+        ) : mode === 'login' ? (
+          <form onSubmit={login} className="space-y-4">
+            <label className="block text-sm font-semibold text-cocoa">Mobile number
+              <div className="mt-2 flex"><span className="rounded-l-xl border border-r-0 border-linen bg-cream-200 px-3 py-3 text-sm">+91</span><input className={`${inputClass} rounded-l-none`} inputMode="numeric" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} required /></div>
+            </label>
+            <PasswordField value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword(!showPassword)} inputClass={inputClass} />
+            <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy}>
+              {busy && <Loader2 size={16} className="animate-spin" />} Log in
+            </button>
+            <button type="button" className="w-full text-sm font-medium text-sage" onClick={() => switchMode('forgot')}>Forgot password?</button>
+          </form>
+        ) : (
+          <form onSubmit={sendOtp} className="space-y-4">
+            {mode === 'signup' && <>
+              <label className="block text-sm font-semibold text-cocoa">Full name<input className={`${inputClass} mt-2`} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></label>
+            </>}
+            <label className="block text-sm font-semibold text-cocoa">Mobile number
+              <div className="mt-2 flex"><span className="rounded-l-xl border border-r-0 border-linen bg-cream-200 px-3 py-3 text-sm">+91</span><input className={`${inputClass} rounded-l-none`} inputMode="numeric" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} required /></div>
+            </label>
+            <PasswordField value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword(!showPassword)} inputClass={inputClass} label={mode === 'forgot' ? 'New password' : 'Password'} />
+            {mode === 'signup' && <>
+              <PasswordField value={confirmPassword} onChange={setConfirmPassword} show={showPassword} onToggle={() => setShowPassword(!showPassword)} inputClass={inputClass} label="Confirm password" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-cocoa">House / shop<input className={`${inputClass} mt-2`} value={house} onChange={(e) => setHouse(e.target.value)} required /></label>
+                <label className="block text-sm font-semibold text-cocoa">Area<input className={`${inputClass} mt-2`} value={area} onChange={(e) => setArea(e.target.value)} required /></label>
+              </div>
+              <label className="block text-sm font-semibold text-cocoa">Landmark <span className="font-normal text-cocoa-muted">(optional)</span><input className={`${inputClass} mt-2`} value={landmark} onChange={(e) => setLandmark(e.target.value)} /></label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-cocoa">City<input className={`${inputClass} mt-2`} value={city} onChange={(e) => setCity(e.target.value)} required /></label>
+                <label className="block text-sm font-semibold text-cocoa">PIN code<input className={`${inputClass} mt-2`} inputMode="numeric" value={postalCode} onChange={(e) => setPostalCode(e.target.value.replace(/\D/g, '').slice(0, 6))} /></label>
+              </div>
+              <button type="button" onClick={locate} className="flex w-full items-center justify-center gap-2 rounded-xl border border-sage/30 bg-sage/5 px-4 py-3 text-sm font-semibold text-sage" disabled={busy}>
+                <LocateFixed size={17} /> {latitude === null ? 'Detect delivery location' : 'Location detected — update'}
+              </button>
+              <p className="text-xs leading-relaxed text-cocoa-muted">Delivery availability is checked securely against the cafe’s 20 km service area at checkout. You can still use pickup if delivery is unavailable.</p>
+            </>}
+            <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy}>
+              {busy && <Loader2 size={16} className="animate-spin" />} Send verification code
+            </button>
+          </form>
+        )}
 
-        {/* Phone Login Form */}
-        <div className="mb-6">
-          {step === 'phone' ? (
-            <form onSubmit={handleSendOtp} className="space-y-3 text-left">
-              <div>
-                <label className="font-sans text-[10px] font-medium text-cocoa-muted mb-1 block">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your name"
-                  className="input-field py-2.5 text-xs w-full"
-                  required
-                />
-              </div>
-              <div>
-                <label className="font-sans text-[10px] font-medium text-cocoa-muted mb-1 block">
-                  Mobile Number
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                    className="border border-linen bg-cream rounded-xl px-2.5 text-xs text-cocoa font-medium focus:outline-none focus:border-sage/40"
-                  >
-                    <option value="91">+91 (IN)</option>
-                    <option value="1">+1 (US)</option>
-                    <option value="44">+44 (UK)</option>
-                    <option value="971">+971 (AE)</option>
-                  </select>
-                  <input
-                    type="tel"
-                    pattern="[0-9]{10}"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    placeholder="Enter 10-digit number"
-                    className="input-field py-2.5 text-xs flex-1"
-                    required
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={isPhoneLoading || phoneNumber.length !== 10 || !fullName.trim()}
-                className="btn-primary w-full py-2.5 text-xs flex items-center justify-center gap-1.5"
-              >
-                {isPhoneLoading ? (
-                  <span className="w-3.5 h-3.5 border-2 border-cream/40 border-t-cream rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Phone size={13} className="text-cream" />
-                    Send OTP Code
-                  </>
-                )}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-3 text-left">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="font-sans text-[10px] font-medium text-cocoa-muted block">
-                    Enter OTP sent to +{countryCode} {phoneNumber}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => { setStep('phone'); setOtpCode(''); }}
-                    className="font-sans text-[10px] text-sage hover:underline flex items-center gap-0.5"
-                  >
-                    <ChevronLeft size={10} />
-                    Change
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  pattern="[0-9]*"
-                  maxLength={8}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter code"
-                  className="input-field py-2.5 text-center tracking-widest font-mono text-sm"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isPhoneLoading || otpCode.length < 4}
-                className="btn-primary w-full py-2.5 text-xs flex items-center justify-center gap-1.5"
-              >
-                {isPhoneLoading ? (
-                  <span className="w-3.5 h-3.5 border-2 border-cream/40 border-t-cream rounded-full animate-spin" />
-                ) : (
-                  "Verify & Sign In"
-                )}
-              </button>
-              <div className="text-center mt-2">
-                {resendTimer > 0 ? (
-                  <p className="font-sans text-[9px] text-cocoa-muted/70">
-                    Resend code in {resendTimer}s
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSendOtp}
-                    className="font-sans text-[10px] text-sage hover:underline"
-                  >
-                    Resend OTP
-                  </button>
-                )}
-              </div>
-            </form>
-          )}
+        <div className="mt-7 border-t border-linen pt-5 text-center text-sm text-cocoa-muted">
+          {mode === 'login' ? <>New to Gannamasti? <button className="font-semibold text-sage" onClick={() => switchMode('signup')}>Create account</button></> : <>Already have an account? <button className="font-semibold text-sage" onClick={() => switchMode('login')}>Log in</button></>}
         </div>
-
-        <p className="font-sans text-[10px] text-cocoa-muted/70 leading-relaxed mb-4">
-          By signing in, you agree to our terms of service and privacy policy. Secured with SMS Authentication.
-        </p>
-
-        {/* Reviewer / Tester Login Bypass */}
-        <div className="mt-4 pt-4 border-t border-linen/50">
-          <button
-            onClick={() => setShowTesterLogin(!showTesterLogin)}
-            className="font-sans text-[10px] text-cocoa-muted/50 hover:text-cocoa transition-colors"
-          >
-            {showTesterLogin ? "Hide reviewer sign in" : "Payment Reviewer / Auditor Login"}
-          </button>
-
-          {showTesterLogin && (
-            <motion.form
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              onSubmit={handleTesterLogin}
-              className="mt-4 space-y-3 text-left"
-            >
-              <div>
-                <label className="font-sans text-[9px] font-medium text-cocoa-muted mb-1 block">
-                  Auditor Email
-                </label>
-                <input
-                  type="email"
-                  value={testerEmail}
-                  onChange={(e) => setTesterEmail(e.target.value)}
-                  placeholder="reviewer@gannamasticafe.in"
-                  className="input-field py-2 text-xs"
-                  required
-                />
-              </div>
-              <div>
-                <label className="font-sans text-[9px] font-medium text-cocoa-muted mb-1 block">
-                  Auditor Password
-                </label>
-                <input
-                  type="password"
-                  value={testerPassword}
-                  onChange={(e) => setTesterPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="input-field py-2 text-xs"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isTesterLoading}
-                className="btn-primary w-full py-2.5 text-xs flex items-center justify-center gap-1.5"
-              >
-                {isTesterLoading ? (
-                  <span className="w-3.5 h-3.5 border-2 border-cream/40 border-t-cream rounded-full animate-spin" />
-                ) : (
-                  "Sign In with Test Credentials"
-                )}
-              </button>
-            </motion.form>
-          )}
-        </div>
-      </motion.div>
-    </div>
+        <p className="mt-4 text-center text-[11px] text-cocoa-muted">By continuing, you agree to our <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy" className="underline">Privacy Policy</Link>.</p>
+      </div>
+    </main>
   )
 }
 
+function PasswordField({ value, onChange, show, onToggle, inputClass, label = 'Password' }: { value: string; onChange: (value: string) => void; show: boolean; onToggle: () => void; inputClass: string; label?: string }) {
+  return <label className="block text-sm font-semibold text-cocoa">{label}
+    <div className="relative mt-2"><input className={`${inputClass} pr-11`} type={show ? 'text' : 'password'} autoComplete={label === 'Password' ? 'current-password' : 'new-password'} value={value} onChange={(e) => onChange(e.target.value)} minLength={8} required /><button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-cocoa-muted" aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+    {label !== 'Confirm password' && <span className="mt-1 block text-[11px] font-normal text-cocoa-muted">At least 8 characters with a letter and number.</span>}
+  </label>
+}

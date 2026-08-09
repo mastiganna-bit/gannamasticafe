@@ -4,6 +4,8 @@ export type MenuItemSize = {
   size_label: string
   price_paise: number
   sort_order: number
+  extra_cheese_price_paise?: number | null
+  is_available?: boolean
 }
 
 export type MenuItem = {
@@ -18,6 +20,9 @@ export type MenuItem = {
   menu_item_sizes: MenuItemSize[]
   allow_extra_cheese?: boolean
   extra_cheese_price_paise?: number
+  default_size_id?: string | null
+  no_mayonnaise?: boolean
+  sort_order?: number
 }
 
 export type CartItem = {
@@ -56,6 +61,14 @@ export type Order = {
   delivery_lng?: number | null
   pin_adjusted?: boolean
   delivery_otp?: string | null
+  payment_method?: 'online' | 'cod'
+  payment_status?: string
+  fulfillment_status?: string
+  items_subtotal_paise?: number
+  packaging_fee_paise?: number
+  platform_fee_paise?: number
+  delivery_fee_paise?: number
+  discount_paise?: number
   created_at: string
   updated_at: string
 }

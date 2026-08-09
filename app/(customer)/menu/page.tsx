@@ -21,7 +21,7 @@ export default async function MenuPage() {
   const categoryItemOrders: Record<string, string[]> = {
     'Refresher & Hot Brews': [
       'Lemon Masala Soda',
-      'Lemonade',
+      'Fresh Lime Soda',
       'Green Mint Mojito',
       'Watermelon Mojito',
       'Blue Lagoon Mojito',
@@ -70,27 +70,12 @@ export default async function MenuPage() {
     ...newDynamicCategories
   ]
 
-  // Fetch cheese prices
-  const systemItem = menuItems?.find(i => i.category === 'System' && i.name === 'Extra Cheese Settings')
-  const cheesePrices = {
-    standard: 2000,
-    premiumPizzaSmall: 3000,
-    premiumPizzaOther: 5000,
-    specialItem: 3000
-  }
+  const normalizedItems = displayItems.map((item) => ({
+    ...item,
+    menu_item_sizes: [...(item.menu_item_sizes || [])]
+      .filter((size) => size.is_available !== false)
+      .sort((a, b) => a.sort_order - b.sort_order),
+  })).filter((item) => item.menu_item_sizes.length > 0)
 
-  if (systemItem && systemItem.menu_item_sizes) {
-    const sizes = systemItem.menu_item_sizes as any[]
-    const std = sizes.find(s => s.size_label === 'Standard Price')
-    const premSmall = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
-    const premOther = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
-    const spec = sizes.find(s => s.size_label === 'Special Item Price')
-
-    if (std) cheesePrices.standard = std.price_paise
-    if (premSmall) cheesePrices.premiumPizzaSmall = premSmall.price_paise
-    if (premOther) cheesePrices.premiumPizzaOther = premOther.price_paise
-    if (spec) cheesePrices.specialItem = spec.price_paise
-  }
-
-  return <MenuClientPage items={displayItems} categories={categories} cheesePrices={cheesePrices} />
+  return <MenuClientPage items={normalizedItems} categories={categories} />
 }

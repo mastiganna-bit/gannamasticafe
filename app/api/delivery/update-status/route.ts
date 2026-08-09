@@ -1,128 +1,70 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import crypto from 'crypto'
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { requireApprovedDriver } from '@/lib/server/auth'
+import { apiErrorResponse, ApiError } from '@/lib/server/errors'
+import { hashHandoverCode } from '@/lib/server/handover'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 
-export async function POST(request: NextRequest) {
+const requestSchema = z.object({
+  orderId: z.string().uuid(),
+  action: z.enum(['pickup', 'deliver']),
+  otp: z.string().regex(/^\d{6}$/).optional(),
+})
+
+export async function POST(request: Request) {
   try {
-    const supabaseServer = await createClient()
-    const { data: { user } } = await supabaseServer.auth.getUser()
+    const session = await requireApprovedDriver()
+    const input = requestSchema.parse(await request.json())
+    const admin = createAdminClient()
+    const { data: order } = await admin.from('orders').select('*')
+      .eq('id', input.orderId).eq('delivery_boy_id', session.user.id).single()
+    if (!order) throw new ApiError(404, 'Assigned order not found.', 'ORDER_NOT_FOUND')
 
-    if (!user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    if (input.action === 'pickup') {
+      if (order.fulfillment_status !== 'ready' || order.delivery_status !== 'assigned') {
+        throw new ApiError(409, 'This order is not ready for pickup.', 'INVALID_ORDER_TRANSITION')
+      }
+      const { data: updated } = await admin.from('orders').update({
+        fulfillment_status: 'picked_up', delivery_status: 'picked_up', updated_at: new Date().toISOString(),
+      }).eq('id', order.id).eq('fulfillment_status', 'ready').eq('delivery_status', 'assigned').select('id').single()
+      if (!updated) throw new ApiError(409, 'The order changed before pickup.', 'ORDER_CONFLICT')
+      await admin.from('order_events').insert({ order_id: order.id, event_type: 'picked_up', from_status: 'ready', to_status: 'picked_up', actor_id: session.user.id, actor_role: 'driver' })
+      await createOrderStatusNotification(order.id, 'picked_up')
+      return NextResponse.json({ success: true })
     }
 
-    // Check if user has a driver profile
-    const adminSupabase = createAdminClient()
-    const { data: driver } = await adminSupabase
-      .from('delivery_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!driver) {
-      return NextResponse.json({ error: 'Access denied: No delivery agent profile found' }, { status: 403 })
+    if (!input.otp) throw new ApiError(400, 'Enter the customer’s 6-digit handover code.', 'OTP_REQUIRED')
+    if (order.fulfillment_status !== 'picked_up' || order.delivery_status !== 'picked_up') {
+      throw new ApiError(409, 'This order is not out for delivery.', 'INVALID_ORDER_TRANSITION')
+    }
+    if (!order.delivery_otp_expires_at || new Date(order.delivery_otp_expires_at) <= new Date() || order.delivery_otp_attempts >= 5) {
+      throw new ApiError(409, 'The handover code is expired or locked. Contact the cafe.', 'OTP_LOCKED')
+    }
+    const supplied = Buffer.from(hashHandoverCode(input.otp), 'hex')
+    const expected = Buffer.from(order.delivery_otp_hash || '', 'hex')
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
+      await admin.from('orders').update({ delivery_otp_attempts: order.delivery_otp_attempts + 1 }).eq('id', order.id)
+      throw new ApiError(400, 'Incorrect handover code.', 'INVALID_OTP')
     }
 
-    const { orderId, action, otp }: { orderId: string; action: 'accept' | 'pickup' | 'deliver'; otp?: string } = await request.json()
-
-    if (!orderId || !action) {
-      return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
-    }
-
-    // Fetch order to verify state
-    const { data: order, error: fetchError } = await adminSupabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .single()
-
-    if (fetchError || !order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-    }
-
-    if (action === 'accept') {
-      if (order.delivery_status !== 'unassigned') {
-        return NextResponse.json({ error: 'Order is already accepted by another driver' }, { status: 400 })
-      }
-
-      const { error } = await adminSupabase
-        .from('orders')
-        .update({
-          delivery_boy_id: user.id,
-          delivery_status: 'assigned',
-        })
-        .eq('id', orderId)
-
-      if (error) throw error
-      return NextResponse.json({ success: true, message: 'Order accepted' })
-    }
-
-    if (action === 'pickup') {
-      if (order.delivery_boy_id !== user.id) {
-        return NextResponse.json({ error: 'You are not assigned to this order' }, { status: 403 })
-      }
-      if (order.delivery_status !== 'assigned') {
-        return NextResponse.json({ error: 'Invalid state transition' }, { status: 400 })
-      }
-
-      const { error } = await adminSupabase
-        .from('orders')
-        .update({
-          delivery_status: 'picked_up',
-        })
-        .eq('id', orderId)
-
-      if (error) throw error
-
-      // Dispatch real-time customer push notification
-      await createOrderStatusNotification(orderId, 'picked_up')
-
-      return NextResponse.json({ success: true, message: 'Order picked up' })
-    }
-
-    if (action === 'deliver') {
-      if (order.delivery_boy_id !== user.id) {
-        return NextResponse.json({ error: 'You are not assigned to this order' }, { status: 403 })
-      }
-      if (order.delivery_status !== 'picked_up') {
-        return NextResponse.json({ error: 'Invalid state transition' }, { status: 400 })
-      }
-
-      if (!otp) {
-        return NextResponse.json({ error: 'Verification OTP is required to deliver this order' }, { status: 400 })
-      }
-
-      if (order.delivery_otp !== otp) {
-        return NextResponse.json({ error: 'Invalid delivery verification OTP. Please ask the customer.' }, { status: 400 })
-      }
-
-      const { error } = await adminSupabase
-        .from('orders')
-        .update({
-          delivery_status: 'delivered',
-          status: 'completed', // Ensure the main order is completed
-          delivery_otp: null,  // Clear OTP
-        })
-        .eq('id', orderId)
-
-      if (error) throw error
-
-      // Clean up delivery locations for this order since delivery is complete
-      await adminSupabase
-        .from('delivery_locations')
-        .delete()
-        .eq('order_id', orderId)
-
-      // Dispatch real-time customer push notification
-      await createOrderStatusNotification(orderId, 'delivered')
-
-      return NextResponse.json({ success: true, message: 'Order delivered' })
-    }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
-  } catch (error: any) {
-    console.error('Update delivery status error:', error)
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+    const { data: delivered } = await admin.from('orders').update({
+      fulfillment_status: 'delivered',
+      delivery_status: 'delivered',
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      delivery_otp_hash: null,
+      delivery_otp_ciphertext: null,
+      delivery_otp_expires_at: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', order.id).eq('fulfillment_status', 'picked_up').select('id').single()
+    if (!delivered) throw new ApiError(409, 'The order changed before delivery confirmation.', 'ORDER_CONFLICT')
+    await admin.from('delivery_locations').delete().eq('order_id', order.id)
+    await admin.from('order_events').insert({ order_id: order.id, event_type: 'delivered', from_status: 'picked_up', to_status: 'delivered', actor_id: session.user.id, actor_role: 'driver' })
+    await createOrderStatusNotification(order.id, 'delivered')
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return apiErrorResponse(error)
   }
 }

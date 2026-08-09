@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireServerEnv } from '@/lib/env'
 
 // Service role client — only for server-side webhook/admin operations
 export function createAdminClient() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy-project.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key',
+    requireServerEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireServerEnv('SUPABASE_SERVICE_ROLE_KEY'),
     {
       auth: {
         autoRefreshToken: false,

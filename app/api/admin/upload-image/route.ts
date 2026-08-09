@@ -1,86 +1,55 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import sharp from 'sharp'
+import { requireAdmin } from '@/lib/server/auth'
+import { apiErrorResponse, ApiError } from '@/lib/server/errors'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export async function POST(request: NextRequest) {
+const MAX_INPUT_BYTES = 5 * 1024 * 1024
+const MAX_OUTPUT_BYTES = 200 * 1024
+
+export async function POST(request: Request) {
   try {
-    // 1. Verify user is logged in
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // 2. Verify user has admin role
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.is_admin) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    // 3. Parse form data file
+    await requireAdmin()
     const formData = await request.formData()
-    const file = formData.get('file') as File | null
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
+    const file = formData.get('file')
+    if (!(file instanceof File)) throw new ApiError(400, 'Choose an image to upload.', 'FILE_REQUIRED')
+    if (file.size > MAX_INPUT_BYTES) throw new ApiError(400, 'Source image must be smaller than 5 MB.', 'FILE_TOO_LARGE')
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      throw new ApiError(400, 'Only PNG, JPEG, and WebP images are accepted.', 'INVALID_FILE_TYPE')
     }
 
-    // Validate image mimetype
-    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']
-    if (!validTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Invalid file type. Only images are allowed.' }, { status: 400 })
+    const input = Buffer.from(await file.arrayBuffer())
+    const metadata = await sharp(input, { failOn: 'error', limitInputPixels: 25_000_000 }).metadata()
+    if (!metadata.width || !metadata.height || !['png', 'jpeg', 'webp'].includes(metadata.format || '')) {
+      throw new ApiError(400, 'The uploaded file is not a valid image.', 'INVALID_IMAGE')
     }
 
-    const adminSupabase = createAdminClient()
-
-    // 4. Ensure storage bucket exists
-    const { data: buckets } = await adminSupabase.storage.listBuckets()
-    const bucketExists = buckets?.some((b) => b.name === 'menu-images')
-
-    if (!bucketExists) {
-      const { error: bucketError } = await adminSupabase.storage.createBucket('menu-images', {
-        public: true,
-        allowedMimeTypes: validTypes,
-        fileSizeLimit: 5242880 // 5MB limit
-      })
-      if (bucketError) {
-        console.error('Error creating bucket:', bucketError)
-        return NextResponse.json({ error: 'Failed to initialize storage bucket' }, { status: 500 })
-      }
+    let quality = 82
+    let maxWidth = 1400
+    let output: Buffer<ArrayBufferLike> = Buffer.alloc(0)
+    while (quality >= 52) {
+      output = await sharp(input, { failOn: 'error' })
+        .rotate()
+        .resize({ width: maxWidth, height: maxWidth, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality, effort: 5 })
+        .toBuffer()
+      if (output.length <= MAX_OUTPUT_BYTES) break
+      quality -= 8
+      if (quality < 65) maxWidth = 1000
     }
+    if (output.length > MAX_OUTPUT_BYTES) throw new ApiError(400, 'Image could not be compressed below 200 KB. Choose a simpler photo.', 'IMAGE_TOO_COMPLEX')
 
-    // 5. Upload image file to bucket
-    const buffer = await file.arrayBuffer()
-    const sanitizeName = file.name.replace(/[^a-zA-Z0-9.]/g, '')
-    const filename = `menu-item-${Date.now()}-${sanitizeName}`
-
-    const { data: uploadData, error: uploadError } = await adminSupabase.storage
-      .from('menu-images')
-      .upload(filename, Buffer.from(buffer), {
-        contentType: file.type,
-        cacheControl: '3600',
-        upsert: false
-      })
-
-    if (uploadError) {
-      console.error('File upload error:', uploadError)
-      return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 })
-    }
-
-    // 6. Get Public URL
-    const { data: { publicUrl } } = adminSupabase.storage
-      .from('menu-images')
-      .getPublicUrl(filename)
-
-    return NextResponse.json({ success: true, url: publicUrl })
+    const admin = createAdminClient()
+    const filename = `menu/${crypto.randomUUID()}.webp`
+    const { error } = await admin.storage.from('menu-images').upload(filename, output, {
+      contentType: 'image/webp',
+      cacheControl: '31536000',
+      upsert: false,
+    })
+    if (error) throw new ApiError(500, 'Image storage is not configured.', 'STORAGE_FAILED')
+    const { data } = admin.storage.from('menu-images').getPublicUrl(filename)
+    return NextResponse.json({ success: true, url: data.publicUrl, bytes: output.length, width: metadata.width, height: metadata.height })
   } catch (error) {
-    console.error('Image upload endpoint error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return apiErrorResponse(error)
   }
 }

@@ -46,10 +46,10 @@ function OrderSuccessContent() {
       </motion.div>
 
       <h1 className="font-serif text-3xl text-cocoa font-light mb-2">
-        Order Placed!
+        Order received!
       </h1>
       <p className="font-sans text-sm text-cocoa-muted mb-6">
-        Your order is confirmed and being prepared.
+        The cafe has received your order and will confirm it shortly.
       </p>
 
       {order && (
@@ -65,14 +65,14 @@ function OrderSuccessContent() {
           <div className="flex items-center justify-between text-xs font-sans">
             <span className="text-cocoa-muted">Status</span>
             <span className="flex items-center gap-1 text-sage font-medium">
-              <Clock size={11} /> Preparing
+              <Clock size={11} /> {order.fulfillment_status === 'awaiting_acceptance' ? 'Awaiting cafe confirmation' : order.fulfillment_status || 'Processing'}
             </span>
           </div>
         </div>
       )}
 
       <p className="font-sans text-xs text-cocoa-muted mb-6">
-        We'll notify you when your order is ready. 🎉
+        We&apos;ll notify you at every important step.
       </p>
 
       <div className="flex flex-col gap-3">

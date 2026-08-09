@@ -17,7 +17,6 @@ export function generateReceiptId(): string {
   return `GNMST_${Date.now()}_${Math.random().toString(36).substr(2, 9).toUpperCase()}`
 }
 
-import React from 'react'
 
 export function isExtraCheeseEligible(category: string): boolean {
   const eligibleCategories = [
