@@ -32,6 +32,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/wasi-threads": "^1.2.3",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
