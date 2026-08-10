@@ -270,3 +270,28 @@ try {
   }
   rmSync(tempDirectory, { recursive: true, force: true })
 }
+
+const { count: remainingProfiles, error: profileCleanupError } = await admin.from('profiles')
+  .select('id', { count: 'exact', head: true })
+  .in('id', createdUserIds)
+if (profileCleanupError) throw profileCleanupError
+assert(remainingProfiles === 0, `${remainingProfiles} temporary profiles remain after cleanup`)
+if (createdOrderId) {
+  const { data: remainingOrder, error: orderCleanupError } = await admin.from('orders')
+    .select('id')
+    .eq('id', createdOrderId)
+    .maybeSingle()
+  if (orderCleanupError) throw orderCleanupError
+  assert(!remainingOrder, 'Temporary order remains after cleanup')
+}
+if (storeSettingsId && originalStoreSettings) {
+  const { data: restoredSettings, error: restoredSettingsError } = await admin.from('store_settings')
+    .select('is_open,temporarily_closed,opening_time,closing_time,cod_enabled')
+    .eq('id', storeSettingsId)
+    .single()
+  if (restoredSettingsError) throw restoredSettingsError
+  for (const [key, value] of Object.entries(originalStoreSettings)) {
+    assert(restoredSettings[key] === value, `Store setting ${key} was not restored after smoke test`)
+  }
+}
+console.log('LIVE_PREVIEW_SMOKE_CLEAN temporary-users temporary-order store-settings')
