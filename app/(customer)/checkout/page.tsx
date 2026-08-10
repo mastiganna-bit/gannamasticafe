@@ -1,857 +1,311 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useCart } from '@/components/cart/CartProvider'
-import { formatPrice, cn, getExtraCheesePrice } from '@/lib/utils'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
-import { useRouter } from 'next/navigation'
-import Image from 'next/image'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import Script from 'next/script'
-import { ShieldCheck, Lock, ChevronDown, ShoppingBag, MapPin, Truck, Store, Compass, Utensils } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import type { RazorpayOptions } from '@/lib/types'
-import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
+import { Banknote, Check, ChevronLeft, Loader2, LocateFixed, MapPin, Plus, Store, UtensilsCrossed } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useCart } from '@/components/cart/CartProvider'
+import { createClient } from '@/lib/supabase/client'
+import { formatPrice } from '@/lib/utils'
+import type { RazorpayOptions, RazorpayResponse } from '@/lib/types'
 
-const PinMapComponent = dynamic(() => import('@/components/cart/PinMapComponent'), { ssr: false })
+type DeliveryType = 'delivery' | 'takeaway' | 'dine_in'
+type PaymentMethod = 'online' | 'cod'
+
+type Address = {
+  id: string
+  label: string
+  recipient_name: string
+  phone: string
+  house: string
+  area: string
+  landmark: string | null
+  city: string
+  postal_code: string | null
+  latitude: number
+  longitude: number
+  is_default: boolean
+}
+
+type Quote = {
+  totals: {
+    itemsSubtotalPaise: number
+    packagingFeePaise: number
+    platformFeePaise: number
+    deliveryFeePaise: number
+    discountPaise: number
+    grandTotalPaise: number
+  }
+  serviceability: { distanceKm: number | null; radiusKm: number }
+  settings: { storeName: string; codEnabled: boolean; freeDeliveryThresholdPaise: number }
+}
+
+type StoreSettings = { canOrder: boolean; closedMessage: string | null; codEnabled: boolean; openingTime: string; closingTime: string }
 
 export default function CheckoutPage() {
-  const { items, totalPaise, clearCart } = useCart()
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [notes, setNotes] = useState('')
-  const [checkingAuth, setCheckingAuth] = useState(true)
-  
-  // Checkout Delivery Options
-  const [deliveryOption, setDeliveryOption] = useState<'pickup' | 'delivery' | 'dine_in'>('pickup')
-  const [tableNumber, setTableNumber] = useState('')
-  const [address, setAddress] = useState('')
-  const [isLocating, setIsLocating] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [deliveryLat, setDeliveryLat] = useState<number | null>(null)
-  const [deliveryLng, setDeliveryLng] = useState<number | null>(null)
-  const [pinAdjusted, setPinAdjusted] = useState(false)
-  const [showMap, setShowMap] = useState(false)
-  
   const router = useRouter()
-  const supabase = createClient()
+  const { items, clearCart } = useCart()
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [addressId, setAddressId] = useState('')
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>('delivery')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('online')
+  const [tableNumber, setTableNumber] = useState('')
+  const [notes, setNotes] = useState('')
+  const [quote, setQuote] = useState<Quote | null>(null)
+  const [quoteError, setQuoteError] = useState('')
+  const [loadingQuote, setLoadingQuote] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [settings, setSettings] = useState<StoreSettings | null>(null)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [clientOrderKey, setClientOrderKey] = useState(() => crypto.randomUUID())
 
-  const [cheesePrices, setCheesePrices] = useState<{ standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number } | undefined>(undefined)
-  const [storeSettings, setStoreSettings] = useState<{ platform_fee: number; packing_charge_per_item: number; delivery_discount: number }>({
-    platform_fee: 6, // default 6 rupees
-    packing_charge_per_item: 5, // default 5 rupees
-    delivery_discount: 0, // default 0
-  })
+  const selectedAddress = addresses.find((address) => address.id === addressId)
+  const requestItems = useMemo(() => items.map((item) => ({
+    menu_item_id: item.menu_item_id,
+    size_id: item.size_id,
+    quantity: item.quantity,
+    extra_cheese: Boolean(item.extra_cheese),
+  })), [items])
 
-  // Fetch dynamic cheese prices
-  useEffect(() => {
-    const fetchCheesePrices = async () => {
-      try {
-        const { data } = await supabase
-          .from('menu_items')
-          .select('*, menu_item_sizes(*)')
-          .eq('category', 'System')
-          .eq('name', 'Extra Cheese Settings')
-          .single()
-
-        if (data && data.menu_item_sizes) {
-          const sizes = data.menu_item_sizes as any[]
-          const std = sizes.find(s => s.size_label === 'Standard Price')
-          const premSmall = sizes.find(s => s.size_label === 'Premium Pizza (Small/Half) Price')
-          const premOther = sizes.find(s => s.size_label === 'Premium Pizza (Medium/Large) Price')
-          const spec = sizes.find(s => s.size_label === 'Special Item Price')
-
-          setCheesePrices({
-            standard: std ? std.price_paise : 2000,
-            premiumPizzaSmall: premSmall ? premSmall.price_paise : 3000,
-            premiumPizzaOther: premOther ? premOther.price_paise : 5000,
-            specialItem: spec ? spec.price_paise : 3000
-          })
-        }
-      } catch (err) {
-        console.error('Failed to fetch dynamic cheese prices:', err)
-      }
-    }
-    fetchCheesePrices()
-
-    const fetchStoreSettings = async () => {
-      try {
-        const { data } = await supabase
-          .from('store_settings')
-          .select('*')
-          .limit(1)
-          .single()
-        
-        if (data) {
-          setStoreSettings({
-            platform_fee: Number(data.platform_fee),
-            packing_charge_per_item: Number(data.packing_charge_per_item),
-            delivery_discount: Number(data.delivery_discount),
-          })
-        }
-      } catch (err) {
-        console.error('Failed to fetch store settings:', err)
-      }
-    }
-    fetchStoreSettings()
-  }, [supabase])
-
-
-  // 1. Enforce authentication on checkout mount & autofill details
-  useEffect(() => {
-    const verifyUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        toast.error('Please sign in to place an order.', { id: 'auth-required' })
-        router.push('/login?next=/checkout')
-      } else {
-        if (user.email) {
-          setEmail(user.email)
-        }
-
-        // Fetch user metadata (Google ID)
-        const meta = user.user_metadata || {}
-        let metaName = meta.full_name || ''
-        let metaPhone = meta.phone || ''
-        let metaAddress = meta.address || ''
-
-        // Fetch profiles table as fallback/backup
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name, phone')
-            .eq('id', user.id)
-            .single()
-
-          if (profile) {
-            if (!metaName && profile.full_name) metaName = profile.full_name
-            if (!metaPhone && profile.phone) metaPhone = profile.phone
-          }
-        } catch (err) {
-          console.error('Failed to fetch profile:', err)
-        }
-
-        // Fetch localStorage as final fallback
-        const savedName = localStorage.getItem('gannamasti_customer_name')
-        const savedPhone = localStorage.getItem('gannamasti_customer_phone')
-        const savedAddress = localStorage.getItem('gannamasti_customer_address')
-
-        if (metaName || savedName) setName(metaName || savedName || '')
-        if (metaPhone || savedPhone) setPhone(metaPhone || savedPhone || '')
-        if (metaAddress || savedAddress) setAddress(metaAddress || savedAddress || '')
-
-        setCheckingAuth(false)
-      }
-    }
-    verifyUser()
-  }, [router, supabase])
-  
-  // 2. Persist and pre-fill delivery option preference from localStorage
-  useEffect(() => {
-    const savedOption = localStorage.getItem('gannamasti_delivery_option')
-    if (savedOption === 'pickup' || savedOption === 'delivery' || savedOption === 'dine_in') {
-      setDeliveryOption(savedOption as any)
-    }
+  const loadAddresses = useCallback(async () => {
+    const response = await fetch('/api/addresses', { cache: 'no-store' })
+    if (!response.ok) return
+    const result = await response.json()
+    setAddresses(result.addresses || [])
+    const preferred = result.addresses?.find((address: Address) => address.is_default) || result.addresses?.[0]
+    if (preferred) setAddressId((current) => current || preferred.id)
   }, [])
 
-  // 2. Pricing & Charge calculations (paise)
-  const subtotalPrice = totalPaise
-
-  // Sugarcane quantity logic (Ganna / Sugarcane matching)
-  const sugarcaneQty = items
-    .filter(item => 
-      item.name.toLowerCase().includes('sugarcane') ||
-      item.name.toLowerCase().includes('ganna') ||
-      (item.category && item.category.toLowerCase().includes('cane'))
-    )
-    .reduce((sum, item) => sum + item.quantity, 0)
-  const packagingCharges = sugarcaneQty * (storeSettings.packing_charge_per_item * 100) // convert to paise
-
-  // Flat Platform Fee
-  const platformFee = storeSettings.platform_fee * 100 // convert to paise
-
-  // Delivery Charges: ₹50 under ₹299 (paise threshold: 29900), free for ₹300+ (30000+)
-  const baseDeliveryCharge = deliveryOption === 'delivery'
-    ? (subtotalPrice < 29900 ? 5000 : 0)
-    : 0
-  const deliveryCharges = Math.max(0, baseDeliveryCharge - (storeSettings.delivery_discount * 100))
-
-  // 10% Discount on non-sugarcane items for self-pickup
-  let discountAmount = 0
-  if (deliveryOption === 'pickup') {
-    items.forEach(item => {
-      const isSugarcane = item.name.toLowerCase().includes('sugarcane') ||
-                          item.name.toLowerCase().includes('ganna') ||
-                          (item.category && item.category.toLowerCase().includes('cane'))
-      if (!isSugarcane) {
-        const extraPrice = item.extra_cheese
-          ? (item.extra_cheese_price_paise !== undefined
-            ? item.extra_cheese_price_paise
-            : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
-          : 0
-        discountAmount += Math.round(0.10 * (item.price_paise + extraPrice) * item.quantity)
-      }
-    })
-  }
-
-  // Grand Total calculation
-  const grandTotal = subtotalPrice + packagingCharges + platformFee + deliveryCharges - discountAmount
-
-  // HTML5 geolocation puller
-  const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser')
-      return
-    }
-    setIsLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords
-        setDeliveryLat(latitude)
-        setDeliveryLng(longitude)
-        setPinAdjusted(true)
-        setShowMap(true)
-        
-        setAddress(prev => {
-          const newCoord = `📍 GPS Delivery Link: https://maps.google.com/?q=${latitude},${longitude}\n`
-          if (prev.includes('GPS Delivery Link')) {
-            return prev.replace(/📍 GPS Delivery Link: https:\/\/maps\.google\.com\/\?q=[-\d.]+,[-\d.]+\n?/, newCoord)
-          }
-          return prev ? newCoord + prev : `${newCoord}House No / Landmark: `
-        })
-        setIsLocating(false)
-        toast.success('GPS location captured! Adjust pin on the map below for high precision.', { icon: '📍' })
-      },
-      (error) => {
-        console.error('Geolocation error:', error)
-        setIsLocating(false)
-        toast.error('Location block. Please enter your address manually.')
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    )
-  }
-
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (items.length === 0) {
-      toast.error('Your cart is empty!')
-      return
-    }
-    if (!name || !phone) {
-      toast.error('Please enter your name and phone number')
-      return
-    }
-    if (phone.length < 10) {
-      toast.error('Please enter a valid 10-digit phone number')
-      return
-    }
-    if (deliveryOption === 'delivery') {
-      if (!address) {
-        toast.error('Please provide a delivery address!')
-        return
-      }
-      if (!address.toLowerCase().includes('rohtak')) {
-        toast.error('Delivery is currently only available in Rohtak area. Please change your address or choose self-pickup.', { duration: 6000 })
-        return
-      }
-    }
-
-    setIsLoading(true)
-
-    // Validate item availability before starting payment flow
-    try {
-      const { data: dbItems, error: stockErr } = await supabase
-        .from('menu_items')
-        .select('id, name, is_available')
-        .in('id', items.map(item => item.menu_item_id))
-
-      if (stockErr) throw stockErr
-
-      const unavailableItems = items.filter(cartItem => {
-        const matched = dbItems?.find(db => db.id === cartItem.menu_item_id)
-        return !matched || !matched.is_available
-      })
-
-      if (unavailableItems.length > 0) {
-        const names = unavailableItems.map(i => i.name).join(', ')
-        toast.error(`Sorry, the following items are currently sold out or hidden: ${names}. Please remove/edit them to proceed.`, { duration: 6000 })
-        setIsLoading(false)
-        return
-      }
-    } catch (err) {
-      console.error('Stock verification error:', err)
-      toast.error('Failed to verify items availability. Please try again.')
-      setIsLoading(false)
-      return
-    }
-
-    // Save details to localStorage for next time
-    localStorage.setItem('gannamasti_customer_name', name)
-    localStorage.setItem('gannamasti_customer_phone', phone)
-    localStorage.setItem('gannamasti_customer_address', address)
-    localStorage.setItem('gannamasti_delivery_option', deliveryOption)
-
-    try {
+  useEffect(() => {
+    const initialize = async () => {
+      const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        // Update Google ID user metadata (autofills next time)
-        await supabase.auth.updateUser({
-          data: {
-            full_name: name,
-            phone: phone,
-            address: address,
-          }
-        })
-
-        // Update public profiles table
-        await supabase
-          .from('profiles')
-          .update({
-            full_name: name,
-            phone: phone,
-          })
-          .eq('id', user.id)
+      if (!user) {
+        router.replace('/login?next=/checkout')
+        return
       }
+      await Promise.all([
+        loadAddresses(),
+        fetch('/api/store-settings', { cache: 'no-store' }).then(async (response) => {
+          if (response.ok) setSettings(await response.json())
+        }),
+      ])
+      setCheckingAuth(false)
+    }
+    initialize()
+  }, [loadAddresses, router])
 
-      // Format clean kitchen order note
-      const formattedNotes = `${notes}\n[OPTION: ${
-        deliveryOption === 'delivery' ? 'Home Delivery' : deliveryOption === 'dine_in' ? 'Dine-In' : 'Self-Pickup'
-      }]${
-        deliveryOption === 'delivery' ? `\n[DELIVERY ADDRESS: ${address}]` : ''
-      }${
-        deliveryOption === 'dine_in' && tableNumber ? `\n[TABLE NUMBER: ${tableNumber}]` : ''
-      }`
+  useEffect(() => {
+    setClientOrderKey(crypto.randomUUID())
+  }, [requestItems, deliveryType, addressId, paymentMethod])
 
-      // Step 1: Create Razorpay order on server
+  useEffect(() => {
+    if (!requestItems.length || (deliveryType === 'delivery' && !selectedAddress)) {
+      setQuote(null)
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      setLoadingQuote(true)
+      setQuoteError('')
+      try {
+        const response = await fetch('/api/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            items: requestItems,
+            deliveryType,
+            latitude: deliveryType === 'delivery' ? selectedAddress?.latitude : undefined,
+            longitude: deliveryType === 'delivery' ? selectedAddress?.longitude : undefined,
+          }),
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Unable to calculate order total.')
+        setQuote(result)
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          setQuote(null)
+          setQuoteError(error instanceof Error ? error.message : 'Unable to calculate order total.')
+        }
+      } finally {
+        setLoadingQuote(false)
+      }
+    }, 250)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [requestItems, deliveryType, selectedAddress])
+
+  const placeOrder = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!quote) return toast.error(quoteError || 'Order total is not ready.')
+    if (deliveryType === 'delivery' && !addressId) return toast.error('Select a delivery address.')
+    if (deliveryType === 'dine_in' && !tableNumber.trim()) return toast.error('Enter your table number.')
+    setSubmitting(true)
+    try {
       const response = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: grandTotal,
-          customer_name: name,
-          customer_phone: phone,
-          customer_email: email,
-          items,
-          notes: formattedNotes,
-          user_id: user?.id || null,
-          delivery_type: deliveryOption === 'pickup' ? 'takeaway' : deliveryOption,
-          delivery_address: deliveryOption === 'delivery' ? address : null,
-          delivery_notes: notes || null,
-          delivery_lat: deliveryOption === 'delivery' ? deliveryLat : null,
-          delivery_lng: deliveryOption === 'delivery' ? deliveryLng : null,
-          pin_adjusted: deliveryOption === 'delivery' ? pinAdjusted : false,
+          clientOrderKey,
+          items: requestItems,
+          deliveryType,
+          paymentMethod,
+          addressId: deliveryType === 'delivery' ? addressId : undefined,
+          tableNumber: deliveryType === 'dine_in' ? tableNumber : undefined,
+          notes,
         }),
       })
+      const order = await response.json()
+      if (!response.ok) throw new Error(order.error || 'Order could not be created.')
 
-      const orderData = await response.json()
-
-      if (!response.ok || !orderData.razorpay_order_id) {
-        throw new Error(orderData.error || 'Failed to create order')
+      if (paymentMethod === 'cod') {
+        clearCart()
+        toast.success('Order placed. Pay when you receive it.')
+        router.push(`/order-success?order_id=${order.orderId}`)
+        return
       }
 
-      // Step 2: Open Razorpay checkout
-      const razorpayOptions: RazorpayOptions = {
+      if (!window.Razorpay || !order.razorpayOrderId) throw new Error('Secure payment window is unavailable.')
+      const options: RazorpayOptions = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-        amount: grandTotal,
+        amount: order.amount,
         currency: 'INR',
         name: 'Gannamasti Cafe',
-        description: `${deliveryOption === 'delivery' ? 'Home Delivery' : deliveryOption === 'dine_in' ? 'Dine-In' : 'Self-Pickup'} Order`,
+        description: `${deliveryType === 'delivery' ? 'Home Delivery' : deliveryType === 'dine_in' ? 'Dine-In' : 'Self-Pickup'} Order`,
         image: '/images/logo.png',
-        order_id: orderData.razorpay_order_id,
-        handler: async (response) => {
-          // Step 3: Verify payment on server
-          const verifyRes = await fetch('/api/verify-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            }),
-          })
-
-          const verifyData = await verifyRes.json()
-
-          if (verifyData.success) {
+        order_id: order.razorpayOrderId,
+        handler: async (payment: RazorpayResponse) => {
+          try {
+            const verify = await fetch('/api/verify-payment', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                orderId: order.orderId,
+                razorpayOrderId: payment.razorpay_order_id,
+                razorpayPaymentId: payment.razorpay_payment_id,
+                razorpaySignature: payment.razorpay_signature,
+              }),
+            })
+            const result = await verify.json()
+            if (!verify.ok || !result.success) throw new Error(result.error || 'Payment verification failed.')
             clearCart()
-            toast.success('Order placed successfully!')
-            router.push(`/order-success?order_id=${orderData.order_db_id}`)
-          } else {
-            toast.error('Payment verification failed. Please contact us.')
+            toast.success('Payment verified and order placed!')
+            router.push(`/order-success?order_id=${order.orderId}`)
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Payment verification failed. Your order will reconcile automatically.')
+          } finally {
+            setSubmitting(false)
           }
         },
-        prefill: {
-          name,
-          email,
-          contact: phone,
-        },
-        theme: {
-          color: '#3D6B4F',
-        },
-        modal: {
-          ondismiss: () => {
-            setIsLoading(false)
-            toast('Payment cancelled', { icon: '⚠️' })
-          },
-        },
+        theme: { color: '#3D6B4F' },
+        modal: { ondismiss: () => { setSubmitting(false); toast('Payment window closed.', { icon: 'ℹ️' }) } },
       }
-
-      const rzp = new (window as any).Razorpay(razorpayOptions)
-      rzp.open()
+      new window.Razorpay(options).open()
     } catch (error) {
-      console.error('Checkout error:', error)
-      toast.error('Something went wrong. Please try again.')
-    } finally {
-      setIsLoading(false)
+      toast.error(error instanceof Error ? error.message : 'Something went wrong.')
+      setSubmitting(false)
     }
   }
 
-  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false)
+  if (checkingAuth) return <LoadingPage label="Checking your account…" />
+  if (!items.length) return <main className="min-h-screen bg-cream px-4 pt-32 text-center"><h1 className="font-display text-3xl text-cocoa">Your cart is empty</h1><Link href="/menu" className="btn-primary mt-6 inline-block">Browse menu</Link></main>
 
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen bg-cream pt-24 flex items-center justify-center">
-        <div className="text-center px-4 flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-sage/30 border-t-sage rounded-full animate-spin" />
-          <p className="font-sans text-sm text-cocoa-muted">Verifying your secure session...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="min-h-screen bg-cream pt-24 flex items-center justify-center">
-        <div className="text-center px-4">
-          <p className="font-display text-2xl text-cocoa mb-2">Your cart is empty</p>
-          <p className="font-sans text-sm text-cocoa-muted mb-6">Add some items before checkout</p>
-          <a href="/menu" className="btn-primary inline-block">Browse Menu</a>
-        </div>
-      </div>
-    )
-  }
-
-  const isAddressInvalid = deliveryOption === 'delivery' && address.trim().length > 0 && !address.toLowerCase().includes('rohtak')
-
-  return (
-    <>
-      <Script
-        src="https://checkout.razorpay.com/v1/checkout.js"
-        strategy="lazyOnload"
-      />
-
-      <div className="min-h-screen bg-cream pt-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 md:py-10">
-          <div className="mb-6 md:mb-8">
-            <p className="font-sans text-xs text-sage font-medium uppercase tracking-widest mb-1">
-              Almost there
-            </p>
-            <h1 className="font-serif text-3xl md:text-4xl text-cocoa font-light">Checkout</h1>
-          </div>
-
-          {/* Shopify-style Mobile Collapsible Order Summary */}
-          <div className="block lg:hidden mb-6 bg-cream-200 border border-linen rounded-xl2 overflow-hidden shadow-sm">
-            <button
-              type="button"
-              onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
-              className="w-full flex items-center justify-between px-4 py-3.5 text-left font-sans text-xs xs:text-sm font-medium text-cocoa hover:bg-cream-300/40 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <ShoppingBag size={16} className="text-sage" />
-                {isSummaryExpanded ? 'Hide Order Summary' : 'Show Order Summary'}
-              </span>
-              <span className="flex items-center gap-1.5 font-semibold text-cocoa">
-                {formatPrice(grandTotal)}
-                <ChevronDown size={14} className={cn('transition-transform duration-300', isSummaryExpanded && 'rotate-180')} />
-              </span>
-            </button>
-            
-            <AnimatePresence>
-              {isSummaryExpanded && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="px-4 pb-4 pt-1 border-t border-linen bg-cream-100"
-                >
-                  <div className="space-y-3 mt-2">
-                    {items.map((item) => {
-                      const extraPrice = item.extra_cheese
-                        ? (item.extra_cheese_price_paise !== undefined
-                          ? item.extra_cheese_price_paise
-                          : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
-                        : 0
-                      const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
-                      return (
-                        <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3 py-1">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
-                            <Image
-                              src={item.image_path}
-                              alt={item.name}
-                              fill
-                              className="object-cover w-full h-full"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-sans text-xs font-semibold text-cocoa truncate">{item.name}</p>
-                            <div className="font-sans text-[10px] text-cocoa-muted flex flex-col leading-tight">
-                              <span>Size: {item.size_label} · Qty: {item.quantity}</span>
-                              {item.extra_cheese && (
-                                <span className="text-[9px] text-sage font-semibold mt-0.5">
-                                  + Extra Cheese (+{formatPrice(extraPrice)})
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
-                            {formatPrice(itemTotalPrice)}
-                          </p>
-                        </div>
-                      )
-                    })}
-
-                    {/* Breakdown inside mobile summary */}
-                    <div className="border-t border-linen pt-3 space-y-1.5 text-xs font-sans text-cocoa-muted">
-                      <div className="flex justify-between">
-                        <span>Items Subtotal</span>
-                        <span className="text-cocoa font-medium">{formatPrice(subtotalPrice)}</span>
-                      </div>
-                      {packagingCharges > 0 && (
-                        <div className="flex justify-between">
-                          <span>Sugarcane Packaging Fee (₹{storeSettings.packing_charge_per_item}/item)</span>
-                          <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span>Platform Fee</span>
-                        <span className="text-cocoa font-medium">{formatPrice(platformFee)}</span>
-                      </div>
-                      {deliveryOption === 'delivery' && (
-                        <div className="flex justify-between">
-                          <span>Delivery Fee {subtotalPrice >= 29900 && '(Free over ₹300)'}</span>
-                          <span className="text-cocoa font-medium">{deliveryCharges > 0 ? formatPrice(deliveryCharges) : 'FREE'}</span>
-                        </div>
-                      )}
-                      {deliveryOption === 'pickup' && discountAmount > 0 && (
-                        <div className="flex justify-between text-sage font-medium">
-                          <span>10% Self-Pickup Discount</span>
-                          <span>-{formatPrice(discountAmount)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
-            {/* Form */}
-            <div className="lg:col-span-3">
-              <form onSubmit={handleCheckout} className="space-y-5">
-                
-                {/* 1. Pick Up vs Delivery vs Dine In Option Selector */}
-                <div className="bg-cream-200 rounded-xl2 p-5 border border-linen">
-                  <h2 className="font-display text-lg text-cocoa mb-3.5">How would you like your order?</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryOption('pickup')}
-                      className={cn(
-                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
-                        deliveryOption === 'pickup'
-                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
-                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
-                      )}
-                    >
-                      <Store size={22} className="mb-1.5" />
-                      <span className="text-xs font-bold">Self-Pickup</span>
-                      <span className="text-[9px] text-sage font-medium mt-1 uppercase tracking-wider bg-sage/10 px-2 py-0.5 rounded-full">10% OFF</span>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryOption('delivery')}
-                      className={cn(
-                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
-                        deliveryOption === 'delivery'
-                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
-                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
-                      )}
-                    >
-                      <Truck size={22} className="mb-1.5" />
-                      <span className="text-xs font-bold">Home Delivery</span>
-                      <span className="text-[9px] text-cocoa-muted font-medium mt-1">{subtotalPrice >= 29900 ? 'FREE DELIVERY' : '₹50 CHARGE'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryOption('dine_in')}
-                      className={cn(
-                        'flex flex-col items-center justify-center p-4 rounded-xl border font-sans transition-all duration-300 cursor-pointer shadow-sm',
-                        deliveryOption === 'dine_in'
-                          ? 'border-sage bg-sage/5 text-sage ring-1 ring-sage'
-                          : 'border-linen bg-white text-cocoa-muted hover:text-cocoa hover:bg-cream-100/50'
-                      )}
-                    >
-                      <Utensils size={22} className="mb-1.5" />
-                      <span className="text-xs font-bold">Dine-In</span>
-                      <span className="text-[9px] text-cocoa-muted font-medium mt-1">EAT AT CAFE</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. Customer Details */}
-                <div className="bg-cream-200 rounded-xl2 p-5 border border-linen">
-                  <h2 className="font-display text-lg text-cocoa mb-4">Your Details</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
-                        Full Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Enter your name"
-                        className="input-field"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
-                        Phone Number *
-                      </label>
-                      <div className="flex gap-2">
-                        <span className="input-field w-14 text-center shrink-0 bg-cream-200 border-r border-linen cursor-default flex items-center justify-center font-semibold text-cocoa">+91</span>
-                        <input
-                          type="tel"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          placeholder="10-digit number"
-                          className="input-field flex-1"
-                          required
-                          maxLength={10}
-                        />
-                      </div>
-                    </div>
-                    
-                    {deliveryOption === 'dine_in' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="pt-2"
-                      >
-                        <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
-                          Table Number (optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={tableNumber}
-                          onChange={(e) => setTableNumber(e.target.value)}
-                          placeholder="e.g. Table 4 or Table 9"
-                          className="input-field"
-                        />
-                      </motion.div>
-                    )}
-                    
-                    {/* Delivery Address Field with Geolocator button */}
-                    {deliveryOption === 'delivery' && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-3 pt-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <label className="font-sans text-xs font-medium text-cocoa-muted block">
-                            Delivery Address *
-                          </label>
-                          <button
-                            type="button"
-                            onClick={handleGetLocation}
-                            disabled={isLocating}
-                            className="flex items-center gap-1 text-[11px] font-sans font-semibold text-sage hover:text-sage-dark bg-white border border-linen p-1 px-2.5 rounded-lg shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                          >
-                            <Compass size={12} className={cn(isLocating && 'animate-spin')} />
-                            <span>{isLocating ? 'Pinning...' : '📍 Use GPS Location'}</span>
-                          </button>
-                        </div>
-                        <textarea
-                          value={address}
-                          onChange={(e) => setAddress(e.target.value)}
-                          placeholder="Flat No, Apartment, Street name, and prominent Landmark * (GPS link will auto-append here if clicked)"
-                          className={cn("input-field resize-none h-24", isAddressInvalid && "border-red-500/50 focus:border-red-500 focus:ring-red-500/20")}
-                          required
-                        />
-                        {isAddressInvalid && (
-                          <motion.p 
-                            initial={{ opacity: 0, height: 0 }} 
-                            animate={{ opacity: 1, height: 'auto' }} 
-                            className="text-xs text-red-500 font-sans font-medium"
-                          >
-                            ⚠️ Delivery is currently only available in Rohtak area.
-                          </motion.p>
-                        )}
-
-                        {showMap && deliveryLat && deliveryLng && (
-                          <div className="space-y-1.5 mt-2">
-                            <label className="font-sans text-[10px] font-bold text-sage uppercase tracking-wider block">
-                              📍 Adjust Drop-off Spot
-                            </label>
-                            <PinMapComponent
-                              latitude={deliveryLat}
-                              longitude={deliveryLng}
-                              onChange={(lat, lng) => {
-                                setDeliveryLat(lat)
-                                setDeliveryLng(lng)
-                                setPinAdjusted(true)
-                                setAddress(prev => {
-                                  const newLink = `📍 GPS Delivery Link: https://maps.google.com/?q=${lat},${lng}\n`
-                                  if (prev.includes('GPS Delivery Link')) {
-                                    return prev.replace(/📍 GPS Delivery Link: https:\/\/maps\.google\.com\/\?q=[-\d.]+,[-\d.]+\n?/, newLink)
-                                  }
-                                  return newLink + prev
-                                })
-                              }}
-                            />
-                            <p className="font-sans text-[9px] text-cocoa-muted italic">
-                              Drag the red pin to mark your exact gate or doorstep. Your driver will see this pin on their live GPS map!
-                            </p>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    <div>
-                      <label className="font-sans text-xs font-medium text-cocoa-muted mb-1.5 block">
-                        Special Instructions (optional)
-                      </label>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Any special requests or instructions?"
-                        className="input-field resize-none h-16"
-                        maxLength={200}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoading || isAddressInvalid}
-                  className={cn(
-                    "btn-primary w-full py-3.5 text-sm xs:text-base flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-md transition-all",
-                    isAddressInvalid && "opacity-50 grayscale cursor-not-allowed hover:shadow-sm"
-                  )}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-cream/40 border-t-cream rounded-full animate-spin" />
-                      Processing...
-                    </span>
-                  ) : (
-                    <>
-                      <Lock size={16} />
-                      Pay {formatPrice(grandTotal)} Securely
-                    </>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-center gap-2 text-cocoa-muted text-center">
-                  <ShieldCheck size={14} className="text-sage shrink-0" />
-                  <p className="font-sans text-[10px] xs:text-xs">Secured by Razorpay · UPI, Cards, NetBanking accepted</p>
-                </div>
-              </form>
+  return <>
+    <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
+    <main className="min-h-screen bg-cream px-4 pb-20 pt-24">
+      <form onSubmit={placeOrder} className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_380px]">
+        <div className="space-y-6">
+          <Link href="/menu" className="inline-flex items-center gap-1 text-sm font-semibold text-sage"><ChevronLeft size={16} /> Continue shopping</Link>
+          <section className="rounded-2xl border border-linen bg-white p-5 shadow-card">
+            <h1 className="font-display text-3xl text-cocoa">Checkout</h1>
+            {settings && !settings.canOrder && <div className="mt-4 rounded-xl border border-amber-cafe/30 bg-amber-cafe/10 p-3 text-sm text-cocoa">{settings.closedMessage}</div>}
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Option active={deliveryType === 'delivery'} onClick={() => setDeliveryType('delivery')} icon={<MapPin />} label="Delivery" />
+              <Option active={deliveryType === 'takeaway'} onClick={() => setDeliveryType('takeaway')} icon={<Store />} label="Self-pickup" />
+              <Option active={deliveryType === 'dine_in'} onClick={() => setDeliveryType('dine_in')} icon={<UtensilsCrossed />} label="Dine-in" />
             </div>
+          </section>
 
-            {/* Order Summary - Desktop Only */}
-            <div className="hidden lg:block lg:col-span-2">
-              <div className="bg-cream-200 rounded-xl2 border border-linen p-5 sticky top-24 shadow-sm">
-                <h2 className="font-display text-lg text-cocoa mb-4">Order Summary</h2>
-                <div className="space-y-3.5 mb-5 max-h-[260px] overflow-y-auto pr-1 border-b border-linen/60 pb-4">
-                  {items.map((item) => {
-                    const extraPrice = item.extra_cheese
-                      ? (item.extra_cheese_price_paise !== undefined
-                        ? item.extra_cheese_price_paise
-                        : getExtraCheesePrice(item.category || '', item.size_label, item.name, cheesePrices))
-                      : 0
-                    const itemTotalPrice = (item.price_paise + extraPrice) * item.quantity
-                    return (
-                      <div key={`${item.size_id}-${item.extra_cheese ? 'cheese' : 'regular'}`} className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-cream shrink-0 relative border border-linen">
-                          <Image
-                            src={item.image_path}
-                            alt={item.name}
-                            fill
-                            className="object-cover w-full h-full"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-sans text-xs font-semibold text-cocoa truncate">{item.name}</p>
-                          <div className="font-sans text-[10px] text-cocoa-muted flex flex-col leading-tight">
-                            <span>Size: {item.size_label} · Qty: {item.quantity}</span>
-                            {item.extra_cheese && (
-                              <span className="text-[9px] text-sage font-semibold mt-0.5">
-                                + Extra Cheese (+{formatPrice(extraPrice)})
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <p className="font-sans text-xs font-semibold text-amber-cafe shrink-0">
-                          {formatPrice(itemTotalPrice)}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
+          {deliveryType === 'delivery' && <section className="rounded-2xl border border-linen bg-white p-5 shadow-card">
+            <div className="flex items-center justify-between"><h2 className="font-display text-2xl text-cocoa">Delivery address</h2><button type="button" onClick={() => setShowAddressForm(!showAddressForm)} className="flex items-center gap-1 text-sm font-semibold text-sage"><Plus size={15} /> Add address</button></div>
+            <div className="mt-4 grid gap-3">{addresses.map((address) => <button type="button" key={address.id} onClick={() => setAddressId(address.id)} className={`relative rounded-xl border p-4 text-left ${addressId === address.id ? 'border-sage bg-sage/5' : 'border-linen'}`}><p className="font-bold text-cocoa">{address.label} {address.is_default && <span className="ml-2 text-xs font-medium text-sage">Default</span>}</p><p className="mt-1 text-sm text-cocoa-muted">{[address.house, address.area, address.landmark, address.city, address.postal_code].filter(Boolean).join(', ')}</p>{addressId === address.id && <Check size={17} className="absolute right-3 top-3 text-sage" />}</button>)}</div>
+            {!addresses.length && <p className="mt-4 rounded-xl bg-cream-200 p-4 text-sm text-cocoa-muted">Add a saved address with a map location to check delivery availability.</p>}
+            {showAddressForm && <AddressForm onSaved={async () => { setShowAddressForm(false); await loadAddresses() }} />}
+          </section>}
 
-                {/* Subtotal breakdowns */}
-                <div className="space-y-2 border-b border-linen/60 pb-3.5 mb-4 text-xs font-sans text-cocoa-muted">
-                  <div className="flex justify-between items-center">
-                    <span>Items Subtotal</span>
-                    <span className="text-cocoa font-medium">{formatPrice(subtotalPrice)}</span>
-                  </div>
-                  {packagingCharges > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span>Sugarcane Packaging Fee (₹{storeSettings.packing_charge_per_item}/item)</span>
-                      <span className="text-cocoa font-medium">{formatPrice(packagingCharges)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center">
-                    <span>Platform Fee</span>
-                    <span className="text-cocoa font-medium">{formatPrice(platformFee)}</span>
-                  </div>
-                  {deliveryOption === 'delivery' && (
-                    <div className="flex justify-between items-center">
-                      <span>Delivery Fee {subtotalPrice >= 29900 && '(Free over ₹300)'}</span>
-                      <span className="text-cocoa font-medium">
-                        {deliveryCharges > 0 ? formatPrice(deliveryCharges) : 'FREE'}
-                      </span>
-                    </div>
-                  )}
-                  {deliveryOption === 'pickup' && discountAmount > 0 && (
-                    <div className="flex justify-between items-center text-sage font-semibold">
-                      <span>10% Self-Pickup Discount</span>
-                      <span>-{formatPrice(discountAmount)}</span>
-                    </div>
-                  )}
-                </div>
+          {deliveryType === 'dine_in' && <section className="rounded-2xl border border-linen bg-white p-5 shadow-card"><label className="text-sm font-semibold text-cocoa">Table number<input value={tableNumber} onChange={(event) => setTableNumber(event.target.value.slice(0, 20))} className="mt-2 w-full rounded-xl border border-linen px-4 py-3 outline-none focus:border-sage" required /></label></section>}
 
-                <div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-sans text-sm text-cocoa-muted font-bold">Grand Total</span>
-                    <span className="font-sans font-bold text-cocoa text-xl">{formatPrice(grandTotal)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <section className="rounded-2xl border border-linen bg-white p-5 shadow-card">
+            <h2 className="font-display text-2xl text-cocoa">Payment</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2"><Option active={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')} icon={<LockIcon />} label="Pay securely online" />{(settings?.codEnabled ?? true) && <Option active={paymentMethod === 'cod'} onClick={() => setPaymentMethod('cod')} icon={<Banknote />} label={deliveryType === 'delivery' ? 'Cash on delivery' : 'Pay at cafe'} />}</div>
+            <label className="mt-5 block text-sm font-semibold text-cocoa">Preparation notes <span className="font-normal text-cocoa-muted">(optional)</span><textarea value={notes} onChange={(event) => setNotes(event.target.value.slice(0, 500))} rows={3} className="mt-2 w-full resize-none rounded-xl border border-linen px-4 py-3 outline-none focus:border-sage" placeholder="No onion, less spicy…" /></label>
+          </section>
         </div>
-      </div>
-    </>
-  )
+
+        <aside className="h-fit rounded-2xl border border-linen bg-white p-5 shadow-card lg:sticky lg:top-24">
+          <h2 className="font-display text-2xl text-cocoa">Order summary</h2>
+          <div className="mt-4 max-h-64 space-y-3 overflow-y-auto">{items.map((item) => <div key={`${item.size_id}-${item.extra_cheese}`} className="flex justify-between gap-4 text-sm"><span className="text-cocoa">{item.quantity}× {item.name} <small className="block text-cocoa-muted">{item.size_label}{item.extra_cheese ? ' · Extra cheese' : ''}</small></span></div>)}</div>
+          {loadingQuote && <div className="mt-5 flex items-center gap-2 text-sm text-cocoa-muted"><Loader2 size={15} className="animate-spin" /> Calculating securely…</div>}
+          {quoteError && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{quoteError}</div>}
+          {quote && <div className="mt-5 space-y-2 border-t border-linen pt-4 text-sm">
+            <SummaryRow label="Items" value={quote.totals.itemsSubtotalPaise} />
+            {quote.totals.packagingFeePaise > 0 && <SummaryRow label="Sugarcane packaging" value={quote.totals.packagingFeePaise} />}
+            <SummaryRow label="Platform fee" value={quote.totals.platformFeePaise} />
+            {deliveryType === 'delivery' && <SummaryRow label="Delivery" value={quote.totals.deliveryFeePaise} freeLabel />}
+            {quote.totals.discountPaise > 0 && <SummaryRow label="Pickup discount" value={-quote.totals.discountPaise} />}
+            <div className="flex justify-between border-t border-linen pt-3 text-base font-bold text-cocoa"><span>Total</span><span>{formatPrice(quote.totals.grandTotalPaise)}</span></div>
+            {quote.serviceability.distanceKm !== null && <p className="text-xs text-sage">Delivery available · {quote.serviceability.distanceKm} km from cafe</p>}
+          </div>}
+          <button className="btn-primary mt-5 flex w-full items-center justify-center gap-2" disabled={submitting || loadingQuote || !quote || settings?.canOrder === false}>{submitting && <Loader2 size={16} className="animate-spin" />}{paymentMethod === 'cod' ? 'Place order' : 'Proceed to secure payment'}</button>
+          <p className="mt-3 text-center text-[11px] text-cocoa-muted">Prices are verified by the server before the order is created.</p>
+        </aside>
+      </form>
+    </main>
+  </>
+}
+
+function Option({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return <button type="button" onClick={onClick} className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold ${active ? 'border-sage bg-sage/10 text-sage' : 'border-linen text-cocoa'}`}>{icon}{label}</button>
+}
+
+function SummaryRow({ label, value, freeLabel }: { label: string; value: number; freeLabel?: boolean }) {
+  return <div className="flex justify-between text-cocoa-muted"><span>{label}</span><span className={value < 0 ? 'text-sage' : 'text-cocoa'}>{freeLabel && value === 0 ? 'FREE' : formatPrice(value)}</span></div>
+}
+
+function LoadingPage({ label }: { label: string }) { return <div className="flex min-h-screen items-center justify-center bg-cream"><Loader2 className="mr-2 animate-spin text-sage" /> <span className="text-sm text-cocoa-muted">{label}</span></div> }
+function LockIcon() { return <span aria-hidden>🔒</span> }
+
+function AddressForm({ onSaved }: { onSaved: () => Promise<void> }) {
+  const [form, setForm] = useState({ label: 'Home', recipientName: '', phone: '', house: '', area: '', landmark: '', city: 'Rohtak', postalCode: '', latitude: null as number | null, longitude: null as number | null, isDefault: false })
+  const [busy, setBusy] = useState(false)
+  const set = (key: keyof typeof form, value: string | number | boolean | null) => setForm((current) => ({ ...current, [key]: value }))
+  const locate = () => navigator.geolocation?.getCurrentPosition(({ coords }) => { set('latitude', coords.latitude); set('longitude', coords.longitude); toast.success('Map location detected.') }, () => toast.error('Location permission was not granted.'), { enableHighAccuracy: true, timeout: 12_000 })
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    if (form.latitude === null || form.longitude === null) return toast.error('Detect the map location first.')
+    setBusy(true)
+    try {
+      const response = await fetch('/api/addresses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Address could not be saved.')
+      toast.success('Address saved.')
+      await onSaved()
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Address could not be saved.') } finally { setBusy(false) }
+  }
+  const input = 'w-full rounded-xl border border-linen px-3 py-2.5 text-sm outline-none focus:border-sage'
+  return <form onSubmit={save} className="mt-5 grid gap-3 rounded-xl border border-linen bg-cream-100 p-4 sm:grid-cols-2">
+    <input className={input} placeholder="Address label (Home)" value={form.label} onChange={(e) => set('label', e.target.value)} required />
+    <input className={input} placeholder="Recipient name" value={form.recipientName} onChange={(e) => set('recipientName', e.target.value)} required />
+    <input className={input} placeholder="10-digit mobile number" inputMode="numeric" value={form.phone} onChange={(e) => set('phone', e.target.value.replace(/\D/g, '').slice(0, 10))} required />
+    <input className={input} placeholder="House / shop" value={form.house} onChange={(e) => set('house', e.target.value)} required />
+    <input className={input} placeholder="Area" value={form.area} onChange={(e) => set('area', e.target.value)} required />
+    <input className={input} placeholder="Landmark (optional)" value={form.landmark} onChange={(e) => set('landmark', e.target.value)} />
+    <input className={input} placeholder="City" value={form.city} onChange={(e) => set('city', e.target.value)} required />
+    <input className={input} placeholder="PIN code" inputMode="numeric" value={form.postalCode} onChange={(e) => set('postalCode', e.target.value.replace(/\D/g, '').slice(0, 6))} />
+    <button type="button" onClick={locate} className="flex items-center justify-center gap-2 rounded-xl border border-sage/30 bg-white px-3 py-2.5 text-sm font-semibold text-sage"><LocateFixed size={16} />{form.latitude === null ? 'Detect map location' : 'Location detected'}</button>
+    <label className="flex items-center gap-2 text-sm text-cocoa"><input type="checkbox" checked={form.isDefault} onChange={(e) => set('isDefault', e.target.checked)} className="accent-sage" /> Make default</label>
+    <button className="btn-primary sm:col-span-2" disabled={busy}>{busy ? 'Saving…' : 'Save address'}</button>
+  </form>
 }

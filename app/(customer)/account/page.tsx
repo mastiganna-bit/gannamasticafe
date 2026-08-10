@@ -12,7 +12,7 @@ export default async function AccountPage() {
 
   const { data: orders } = await supabase
     .from('orders')
-    .select('*')
+    .select('*,order_items(*),reviews(*)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(20)
@@ -30,12 +30,19 @@ export default async function AccountPage() {
     .eq('id', user.id)
     .single()
 
+  const { data: addresses } = await supabase
+    .from('customer_addresses')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: false })
+
   return (
     <AccountClientPage
       orders={orders || []}
       notifications={notifications || []}
       profile={profile}
-      userEmail={user.email || ''}
+      addresses={addresses || []}
     />
   )
 }

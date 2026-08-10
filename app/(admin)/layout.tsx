@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -9,11 +10,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('is_admin')
+    .select('is_admin,role')
     .eq('id', user.id)
     .single()
 
-  if (!profile?.is_admin) redirect('/')
+  if (!profile?.is_admin && profile?.role !== 'admin') redirect('/')
 
   return (
     <div className="min-h-screen bg-cream-200">
@@ -21,9 +22,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <div className="bg-cocoa text-cream border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <span className="font-serif text-lg text-cream-100">Gannamasti Cafe — Admin</span>
-          <a href="/" className="font-sans text-xs text-cream-100 opacity-60 hover:opacity-100">
+          <Link href="/" className="font-sans text-xs text-cream-100 opacity-60 hover:opacity-100">
             ← View Site
-          </a>
+          </Link>
         </div>
       </div>
       <main>{children}</main>

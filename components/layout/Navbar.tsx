@@ -9,24 +9,14 @@ import { useCart } from '@/components/cart/CartProvider'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
-const formatUserIdentifier = (email: string) => {
-  if (email.endsWith('@phone.gannamasticafe.in')) {
-    const rawNumber = email.split('@')[0]
-    if (rawNumber.startsWith('91') && rawNumber.length === 12) {
-      return `+91 ${rawNumber.substring(2, 7)} ${rawNumber.substring(7)}`
-    }
-    return `+${rawNumber}`
-  }
-  return email
-}
-
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
-  const [user, setUser] = useState<null | { email: string }>(null)
+  const [user, setUser] = useState<null | { label: string }>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isDriver, setIsDriver] = useState(false)
   const { totalItems, setIsCartOpen } = useCart()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20)
@@ -38,16 +28,17 @@ export default function Navbar() {
     const fetchAdminStatus = async (userId: string) => {
       const { data } = await supabase
         .from('profiles')
-        .select('is_admin')
+        .select('is_admin,role,full_name,phone')
         .eq('id', userId)
         .single()
       setIsAdmin(!!data?.is_admin)
+      setIsDriver(data?.role === 'driver')
+      setUser({ label: data?.full_name || data?.phone || 'My account' })
     }
 
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
-        setUser({ email: data.user.email || '' })
-        fetchAdminStatus(data.user.id)
+        void fetchAdminStatus(data.user.id)
       } else {
         setIsAdmin(false)
       }
@@ -55,15 +46,15 @@ export default function Navbar() {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setUser({ email: session.user.email || '' })
-        fetchAdminStatus(session.user.id)
+        void fetchAdminStatus(session.user.id)
       } else {
         setUser(null)
         setIsAdmin(false)
+        setIsDriver(false)
       }
     })
     return () => listener.subscription.unsubscribe()
-  }, [])
+  }, [supabase])
 
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -226,6 +217,7 @@ export default function Navbar() {
                   { label: 'About', href: '/#story' },
                   { label: 'Contact', href: '/#contact' },
                   ...(user && isAdmin ? [{ label: 'Admin Panel', href: '/admin' }] : []),
+                  ...(user && isDriver ? [{ label: 'Delivery Dashboard', href: '/delivery' }] : []),
                 ].map((link) => (
                   <Link
                     key={link.href}
@@ -265,7 +257,7 @@ export default function Navbar() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-serif text-sm font-medium text-cocoa truncate">My Account</p>
-                      <p className="font-sans text-[10px] text-cocoa-muted truncate">{formatUserIdentifier(user.email)}</p>
+                      <p className="font-sans text-[10px] text-cocoa-muted truncate">{user.label}</p>
                     </div>
                   </Link>
                 ) : (

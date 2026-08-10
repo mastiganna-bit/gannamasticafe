@@ -1,203 +1,94 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
+import { FormEvent, useEffect, useState } from 'react'
 import { Save, Settings } from 'lucide-react'
+import toast from 'react-hot-toast'
 
-interface StoreSettingsData {
-  platform_fee: number
-  packing_charge_per_item: number
-  delivery_discount: number
+type FormState = {
+  storeName: string; isOpen: boolean; temporarilyClosed: boolean; openingTime: string; closingTime: string
+  closedMessage: string; platformFee: number; packagingFee: number; deliveryFee: number
+  freeDeliveryThreshold: number; pickupDiscountPercent: number; deliveryCity: string
+  cafeLat: number; cafeLng: number; deliveryRadiusKm: number; codEnabled: boolean
+}
+
+const initial: FormState = {
+  storeName: 'Gannamasti Cafe', isOpen: true, temporarilyClosed: false, openingTime: '10:00', closingTime: '22:00',
+  closedMessage: 'Cafe is currently closed. You can browse the menu and order when we reopen.', platformFee: 6,
+  packagingFee: 5, deliveryFee: 50, freeDeliveryThreshold: 300, pickupDiscountPercent: 10,
+  deliveryCity: 'Rohtak', cafeLat: 28.88277, cafeLng: 76.58098, deliveryRadiusKm: 20, codEnabled: true,
 }
 
 export default function StoreSettings() {
-  const [settings, setSettings] = useState<StoreSettingsData>({
-    platform_fee: 0,
-    packing_charge_per_item: 5,
-    delivery_discount: 0,
-  })
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const supabase = createClient()
+  const [form, setForm] = useState(initial)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetchSettings()
+    fetch('/api/admin/store-settings', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load settings.')
+        setForm({
+          storeName: data.store_name, isOpen: data.is_open, temporarilyClosed: data.temporarily_closed,
+          openingTime: String(data.opening_time).slice(0, 5), closingTime: String(data.closing_time).slice(0, 5),
+          closedMessage: data.closed_message, platformFee: data.platform_fee_paise / 100,
+          packagingFee: data.sugarcane_packaging_fee_paise / 100, deliveryFee: data.delivery_fee_paise / 100,
+          freeDeliveryThreshold: data.free_delivery_threshold_paise / 100,
+          pickupDiscountPercent: Number(data.pickup_discount_percent), deliveryCity: data.delivery_city,
+          cafeLat: Number(data.cafe_lat), cafeLng: Number(data.cafe_lng), deliveryRadiusKm: Number(data.delivery_radius_km),
+          codEnabled: data.cod_enabled,
+        })
+      })
+      .catch((error) => toast.error(error.message))
+      .finally(() => setLoading(false))
   }, [])
 
-  const fetchSettings = async () => {
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }))
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true)
     try {
-      const { data, error } = await supabase
-        .from('store_settings')
-        .select('*')
-        .limit(1)
-        .single()
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No settings found, use defaults
-          setSettings({
-            platform_fee: 0,
-            packing_charge_per_item: 5,
-            delivery_discount: 0,
-          })
-        } else {
-          console.warn('Store settings table might be missing or inaccessible:', error.message || error)
-          setSettings({
-            platform_fee: 0,
-            packing_charge_per_item: 5,
-            delivery_discount: 0,
-          })
-        }
-      } else if (data) {
-        setSettings({
-          platform_fee: Number(data.platform_fee),
-          packing_charge_per_item: Number(data.packing_charge_per_item),
-          delivery_discount: Number(data.delivery_discount),
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching settings:', error)
-      toast.error('Failed to load store settings.')
-    } finally {
-      setIsLoading(false)
-    }
+      const response = await fetch('/api/admin/store-settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeName: form.storeName, isOpen: form.isOpen, temporarilyClosed: form.temporarilyClosed,
+          openingTime: form.openingTime, closingTime: form.closingTime, closedMessage: form.closedMessage,
+          platformFeePaise: Math.round(form.platformFee * 100), sugarcanePackagingFeePaise: Math.round(form.packagingFee * 100),
+          deliveryFeePaise: Math.round(form.deliveryFee * 100), freeDeliveryThresholdPaise: Math.round(form.freeDeliveryThreshold * 100),
+          pickupDiscountPercent: form.pickupDiscountPercent, deliveryCity: form.deliveryCity, cafeLat: form.cafeLat,
+          cafeLng: form.cafeLng, deliveryRadiusKm: form.deliveryRadiusKm, codEnabled: form.codEnabled,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to save settings.')
+      toast.success('Store settings saved.')
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to save settings.') }
+    finally { setSaving(false) }
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSaving(true)
-    try {
-      // Check if row exists
-      const { data: existingData } = await supabase
-        .from('store_settings')
-        .select('id')
-        .limit(1)
-        .single()
-
-      if (existingData) {
-        // Update
-        const { error } = await supabase
-          .from('store_settings')
-          .update({
-            platform_fee: settings.platform_fee,
-            packing_charge_per_item: settings.packing_charge_per_item,
-            delivery_discount: settings.delivery_discount,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingData.id)
-
-        if (error) throw error
-      } else {
-        // Insert
-        const { error } = await supabase
-          .from('store_settings')
-          .insert([{
-            platform_fee: settings.platform_fee,
-            packing_charge_per_item: settings.packing_charge_per_item,
-            delivery_discount: settings.delivery_discount,
-          }])
-        
-        if (error) throw error
-      }
-
-      toast.success('Store settings updated successfully!')
-    } catch (error) {
-      console.error('Error saving settings:', error)
-      toast.error('Failed to save settings. Make sure you have admin rights.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setSettings(prev => ({
-      ...prev,
-      [name]: parseFloat(value) || 0
-    }))
-  }
-
-  if (isLoading) {
-    return <div className="p-8 text-center text-cocoa-muted font-sans text-sm animate-pulse">Loading settings...</div>
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow-card border border-linen p-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-6 border-b border-linen pb-4">
-        <div className="bg-sage/10 p-2 rounded-lg text-sage">
-          <Settings size={20} />
-        </div>
-        <div>
-          <h2 className="font-display text-xl text-cocoa">Store Fees & Configurations</h2>
-          <p className="font-sans text-xs text-cocoa-muted">Manage global charges and discounts applied at checkout.</p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSave} className="space-y-6">
-        <div className="space-y-4">
-          <div>
-            <label className="block font-sans text-sm font-semibold text-cocoa mb-1">
-              Platform Fee (₹)
-            </label>
-            <p className="text-[10px] text-cocoa-muted mb-2">Flat fee added to every order for platform usage.</p>
-            <input
-              type="number"
-              name="platform_fee"
-              min="0"
-              step="0.01"
-              value={settings.platform_fee}
-              onChange={handleChange}
-              className="w-full bg-cream border border-linen rounded-xl px-4 py-3 font-sans text-cocoa focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block font-sans text-sm font-semibold text-cocoa mb-1">
-              Sugarcane Packing Charge (₹)
-            </label>
-            <p className="text-[10px] text-cocoa-muted mb-2">Per-item fee applied to sugarcane/ganna items.</p>
-            <input
-              type="number"
-              name="packing_charge_per_item"
-              min="0"
-              step="0.01"
-              value={settings.packing_charge_per_item}
-              onChange={handleChange}
-              className="w-full bg-cream border border-linen rounded-xl px-4 py-3 font-sans text-cocoa focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block font-sans text-sm font-semibold text-cocoa mb-1">
-              Delivery Discount / Penalty (₹)
-            </label>
-            <p className="text-[10px] text-cocoa-muted mb-2">Use positive number for discount, negative for extra delivery fee on all orders.</p>
-            <input
-              type="number"
-              name="delivery_discount"
-              step="0.01"
-              value={settings.delivery_discount}
-              onChange={handleChange}
-              className="w-full bg-cream border border-linen rounded-xl px-4 py-3 font-sans text-cocoa focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="pt-4 flex justify-end">
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="flex items-center gap-2 bg-sage hover:bg-sage-dark text-white font-sans font-bold py-3 px-6 rounded-xl transition-all duration-300 shadow-sm disabled:opacity-50 cursor-pointer"
-          >
-            <Save size={18} />
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </button>
-        </div>
-      </form>
-    </div>
+  if (loading) return <div className="p-8 text-center text-sm text-cocoa-muted">Loading settings…</div>
+  const numberField = (label: string, key: keyof FormState, step = 1) => (
+    <label className="block text-sm font-semibold text-cocoa">{label}
+      <input type="number" min="0" step={step} value={form[key] as number} onChange={(e) => set(key, Number(e.target.value) as never)} className="mt-1 w-full rounded-xl border border-linen bg-cream px-4 py-3" required />
+    </label>
   )
+  return <form onSubmit={submit} className="mx-auto max-w-4xl rounded-xl border border-linen bg-white p-6 shadow-card">
+    <div className="mb-6 flex items-center gap-3 border-b border-linen pb-4"><Settings className="text-sage"/><div><h2 className="font-display text-xl text-cocoa">Store operations</h2><p className="text-xs text-cocoa-muted">All checkout totals and availability use these server-side values.</p></div></div>
+    <div className="grid gap-5 md:grid-cols-2">
+      <label className="text-sm font-semibold text-cocoa">Store name<input value={form.storeName} onChange={(e)=>set('storeName',e.target.value)} className="mt-1 w-full rounded-xl border border-linen bg-cream px-4 py-3"/></label>
+      <label className="text-sm font-semibold text-cocoa">Delivery city<input value={form.deliveryCity} onChange={(e)=>set('deliveryCity',e.target.value)} className="mt-1 w-full rounded-xl border border-linen bg-cream px-4 py-3"/></label>
+      <label className="text-sm font-semibold text-cocoa">Opening time<input type="time" value={form.openingTime} onChange={(e)=>set('openingTime',e.target.value)} className="mt-1 w-full rounded-xl border border-linen bg-cream px-4 py-3"/></label>
+      <label className="text-sm font-semibold text-cocoa">Closing time<input type="time" value={form.closingTime} onChange={(e)=>set('closingTime',e.target.value)} className="mt-1 w-full rounded-xl border border-linen bg-cream px-4 py-3"/></label>
+      {numberField('Platform fee (₹)', 'platformFee', .01)}{numberField('Sugarcane packaging per item (₹)', 'packagingFee', .01)}
+      {numberField('Delivery fee (₹)', 'deliveryFee', .01)}{numberField('Free delivery from (₹)', 'freeDeliveryThreshold', .01)}
+      {numberField('Pickup discount (%)', 'pickupDiscountPercent', .01)}{numberField('Delivery radius (km)', 'deliveryRadiusKm', .1)}
+      {numberField('Cafe latitude', 'cafeLat', .000001)}{numberField('Cafe longitude', 'cafeLng', .000001)}
+    </div>
+    <label className="mt-5 block text-sm font-semibold text-cocoa">Closed message<textarea value={form.closedMessage} onChange={(e)=>set('closedMessage',e.target.value)} className="mt-1 min-h-24 w-full rounded-xl border border-linen bg-cream px-4 py-3"/></label>
+    <div className="mt-5 grid gap-3 sm:grid-cols-3">
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.isOpen} onChange={(e)=>set('isOpen',e.target.checked)}/> Accept orders</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.temporarilyClosed} onChange={(e)=>set('temporarilyClosed',e.target.checked)}/> Temporary closure</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.codEnabled} onChange={(e)=>set('codEnabled',e.target.checked)}/> Cash on delivery</label>
+    </div>
+    <div className="mt-6 flex justify-end"><button disabled={saving} className="flex items-center gap-2 rounded-xl bg-sage px-6 py-3 font-bold text-white disabled:opacity-50"><Save size={18}/>{saving?'Saving…':'Save settings'}</button></div>
+  </form>
 }

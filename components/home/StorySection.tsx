@@ -23,11 +23,12 @@ export default function StorySection() {
             viewport={{ once: true }}
             className="relative h-72 md:h-96 rounded-2xl overflow-hidden"
           >
-            <img
+            <Image
               src="/images/about/cafe-story.jpg"
               alt="Gannamasti Cafe Story"
-              className="w-full h-full object-cover"
-              loading="lazy"
+              fill
+              sizes="(min-width: 768px) 50vw, 100vw"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-cocoa/30 to-transparent" />
           </motion.div>

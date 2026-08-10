@@ -1,31 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
-import { Plus, ChevronDown } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import { MenuItem, MenuItemSize } from '@/lib/types'
-import { formatPrice, isExtraCheeseEligible, getExtraCheesePrice, cn } from '@/lib/utils'
+import { formatPrice, cn } from '@/lib/utils'
 import { useCart } from '@/components/cart/CartProvider'
 
-export default function MenuCard({ 
-  item,
-  cheesePrices
-}: { 
-  item: MenuItem
-  cheesePrices?: { standard: number; premiumPizzaSmall: number; premiumPizzaOther: number; specialItem: number }
-}) {
+export default function MenuCard({ item }: { item: MenuItem }) {
   const { addItem } = useCart()
   const [selectedSize, setSelectedSize] = useState<MenuItemSize>(() => {
+    const explicitDefault = item.menu_item_sizes.find((size) => size.id === item.default_size_id)
+    if (explicitDefault) return explicitDefault
     if (item.category === 'The Cane Bar') {
       const medium = item.menu_item_sizes.find(
         (size) => size.size_label.toLowerCase().trim() === 'medium'
       )
       if (medium) return medium
     }
+    if (item.category === 'Grill & Thrill Sandwiches') {
+      const full = item.menu_item_sizes.find((size) => size.size_label.toLowerCase().trim() === 'full')
+      if (full) return full
+    }
     return item.menu_item_sizes[0]
   })
-  const [isExpanded, setIsExpanded] = useState(false)
   const [extraCheese, setExtraCheese] = useState(false)
 
   const hasSizes = item.has_sizes && item.menu_item_sizes.length > 1
@@ -47,7 +45,7 @@ export default function MenuCard({
   
   // Dynamic cheese price based on size
   const extraCheesePrice = eligibleForExtraCheese 
-    ? getExtraCheesePrice(item.category || '', selectedSize.size_label, item.name, cheesePrices)
+    ? Number(selectedSize.extra_cheese_price_paise ?? item.extra_cheese_price_paise ?? 0)
     : 0
 
   const handleAdd = () => {
@@ -74,9 +72,7 @@ export default function MenuCard({
     <div
       className={cn(
         "card bg-white flex flex-col h-full relative transition-all duration-300",
-        isExpanded
-          ? "z-30 shadow-card-hover"
-          : "hover:-translate-y-1.5 hover:shadow-card-hover hover:z-20"
+        "hover:-translate-y-1.5 hover:shadow-card-hover hover:z-20"
       )}
     >
       {/* Image Header with standard rounded-t-2xl (matches card's rounded-xl2 exactly) */}
@@ -131,6 +127,9 @@ export default function MenuCard({
           <p className="font-sans text-[10px] xs:text-xs text-cocoa-muted leading-normal mb-3 line-clamp-1 xs:line-clamp-2">
             {item.description}
           </p>
+        )}
+        {item.no_mayonnaise && (
+          <p className="mb-2 inline-flex w-fit rounded-full border border-amber-cafe/30 bg-amber-cafe/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-cafe">No mayonnaise</p>
         )}
 
         {hasSizes ? (
@@ -198,6 +197,7 @@ export default function MenuCard({
           <Plus size={12} className="shrink-0" />
           <span>Add to Cart</span>
         </button>
+        <Link href={`/menu/${item.id}`} className="mt-2 block text-center text-[11px] font-semibold text-sage hover:underline">View full details</Link>
       </div>
     </div>
   )

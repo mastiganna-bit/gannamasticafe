@@ -91,10 +91,13 @@ export default function HeroSection() {
             transition={{ delay: 0.2, duration: 0.7, ease: [0.25, 0.1, 0.25, 1] }}
             className="relative w-full aspect-[4/3] md:h-[480px] lg:h-[520px] rounded-2xl overflow-hidden shadow-card"
           >
-            <img
+            <Image
               src="/images/hero-juice.jpg"
               alt="Real Taste and Real Health at Gannamasti Cafe"
-              className="w-full h-full object-cover object-center"
+              fill
+              priority
+              sizes="(min-width: 768px) 50vw, 100vw"
+              className="object-cover object-center"
             />
             {/* Warm overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-cocoa/30 via-cocoa/5 to-transparent" />

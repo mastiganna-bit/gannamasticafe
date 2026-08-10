@@ -38,7 +38,7 @@ export async function createOrderStatusNotification(orderId: string, status: str
     }
 
     // Calculate item count
-    const items = (order.items as any[]) || []
+    const items = (order.items as Array<{ quantity?: number }> | null) || []
     const itemCount = items.reduce((sum, item) => sum + (item.quantity || 1), 0)
 
     let title = ''
@@ -132,16 +132,16 @@ export async function createOrderStatusNotification(orderId: string, status: str
       try {
         await webpush.sendNotification(pushSubscription, payload)
         console.log(`[Web Push] Successfully dispatched message to: ${sub.endpoint.substring(0, 40)}...`)
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const statusCode = typeof err === 'object' && err !== null && 'statusCode' in err ? Number(err.statusCode) : null
         // Automatically delete invalid, expired, or deactivated subscriptions
-        if (err.statusCode === 410 || err.statusCode === 404) {
-          console.log(`[Web Push] Sub expired (status ${err.statusCode}). Cleaning up endpoint: ${sub.endpoint.substring(0, 40)}...`)
+        if (statusCode === 410 || statusCode === 404) {
           await supabase
             .from('push_subscriptions')
             .delete()
             .eq('endpoint', sub.endpoint)
         } else {
-          console.error(`[Web Push] Error for endpoint ${sub.endpoint.substring(0, 40)}...:`, err)
+          console.error('[Web Push] Notification delivery failed.')
         }
       }
     })
