@@ -9,8 +9,9 @@ for (const line of fs.readFileSync('.env.local', 'utf8').split(/\r?\n/)) {
   env[match[1]] = value
 }
 const url = env.NEXT_PUBLIC_SUPABASE_URL
+const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const key = env.SUPABASE_SERVICE_ROLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-if (!url || !key) throw new Error('Supabase environment is unavailable.')
+if (!url || !key || !anonKey) throw new Error('Supabase environment is unavailable.')
 const response = await fetch(`${url}/rest/v1/`, { headers: { apikey:key,Authorization:`Bearer ${key}`,Accept:'application/openapi+json' } })
 if (!response.ok) throw new Error(`OpenAPI request failed with ${response.status}`)
 const schema = await response.json()
@@ -30,3 +31,13 @@ for (const [table,columns] of Object.entries(requirements)) {
   missing += absent.length
 }
 if (missing) process.exitCode = 2
+
+const publicMenuResponse = await fetch(`${url}/rest/v1/menu_items?select=id&is_available=eq.true&limit=1`, {
+  headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+})
+if (!publicMenuResponse.ok) {
+  throw new Error(`Anonymous menu read failed with ${publicMenuResponse.status}: ${await publicMenuResponse.text()}`)
+}
+const publicMenu = await publicMenuResponse.json()
+if (!Array.isArray(publicMenu) || publicMenu.length === 0) throw new Error('Anonymous menu read returned no available items.')
+console.log('public_menu: READY')
