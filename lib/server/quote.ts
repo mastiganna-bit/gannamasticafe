@@ -6,9 +6,18 @@ import { getStoreSettings, storeAvailability } from './store'
 export const deliveryTypeSchema = z.enum(['delivery', 'takeaway', 'dine_in'])
 export type DeliveryType = z.infer<typeof deliveryTypeSchema>
 
+// PostgreSQL's uuid type accepts the canonical 8-4-4-4-12 hexadecimal shape
+// without enforcing RFC version/variant bits. The legacy menu contains valid
+// PostgreSQL UUIDs generated in that form, so menu foreign keys must mirror the
+// database contract instead of Zod's stricter RFC-only uuid validator.
+const postgresUuidSchema = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  'Invalid database identifier',
+)
+
 export const quoteItemSchema = z.object({
-  menu_item_id: z.string().uuid(),
-  size_id: z.string().uuid(),
+  menu_item_id: postgresUuidSchema,
+  size_id: postgresUuidSchema,
   quantity: z.number().int().min(1).max(25),
   extra_cheese: z.boolean().optional().default(false),
 })

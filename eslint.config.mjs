@@ -15,5 +15,5 @@ export default defineConfig([
       '@next/next/no-img-element': 'off',
     },
   },
-  globalIgnores(['.next/**', 'node_modules/**', 'coverage/**', 'public/**', 'scripts/**']),
+  globalIgnores(['.next/**', '.backups/**', '.vercel/**', 'node_modules/**', 'coverage/**', 'public/**', 'scripts/**']),
 ])
