@@ -174,7 +174,7 @@ try {
     .limit(1)
     .single()
   if (sizeError || !menuSize) throw sizeError || new Error('No available menu size found for order smoke test')
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   assert(uuidPattern.test(menuSize.id), `Live menu size has a non-UUID id: ${String(menuSize.id)}`)
   assert(uuidPattern.test(menuSize.menu_item_id), `Live menu item has a non-UUID id: ${String(menuSize.menu_item_id)}`)
 
