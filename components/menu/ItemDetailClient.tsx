@@ -11,27 +11,35 @@ export default function ItemDetailClient({ item }: { item: MenuItem }) {
   const { addItem } = useCart()
   const initial = item.menu_item_sizes.find((size) => size.id === item.default_size_id)
     || item.menu_item_sizes.find((size) => item.category === 'The Cane Bar' && size.size_label.toLowerCase() === 'medium')
+    || item.menu_item_sizes.find((size) => item.category === 'Grill & Thrill Sandwiches' && size.size_label.toLowerCase() === 'full')
     || item.menu_item_sizes[0]
   const [size, setSize] = useState<MenuItemSize>(initial)
   const [quantity, setQuantity] = useState(1)
   const [extraCheese, setExtraCheese] = useState(false)
   const cheesePrice = Number(size.extra_cheese_price_paise ?? item.extra_cheese_price_paise ?? 0)
+  const sizeName = size.size_label.toLowerCase().trim()
+  const displayImagePath = item.category === 'The Cane Bar'
+    ? sizeName === 'regular' ? '/images/cane/ganna-regular.jpg'
+      : sizeName === 'medium' ? '/images/cane/ganna-medium.jpg'
+        : sizeName === 'large' ? '/images/cane/ganna-large.jpg'
+          : sizeName === 'extra large' || sizeName === 'xl' ? '/images/cane/ganna-xl.jpg'
+            : sizeName === 'jumbo' ? '/images/cane/ganna-jumbo.jpg'
+              : item.image_path
+    : item.image_path
 
   const add = () => {
-    for (let index = 0; index < quantity; index += 1) {
-      addItem({
-        menu_item_id: item.id, size_id: size.id, name: item.name, size_label: size.size_label,
-        price_paise: size.price_paise, quantity: 1, image_path: item.image_path, category: item.category,
-        extra_cheese: extraCheese, extra_cheese_price_paise: extraCheese ? cheesePrice : 0,
-      })
-    }
+    addItem({
+      menu_item_id: item.id, size_id: size.id, name: item.name, size_label: size.size_label,
+      price_paise: size.price_paise, quantity, image_path: displayImagePath, category: item.category,
+      extra_cheese: extraCheese, extra_cheese_price_paise: extraCheese ? cheesePrice : 0,
+    })
   }
 
   return <main className="min-h-screen bg-cream px-4 pb-16 pt-24">
     <div className="mx-auto max-w-5xl">
       <Link href="/menu" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-sage"><ArrowLeft size={16} /> Back to menu</Link>
       <div className="grid overflow-hidden rounded-3xl border border-linen bg-white shadow-card md:grid-cols-2">
-        <div className="relative min-h-80 bg-cream-200"><img src={item.image_path} alt={item.name} className="absolute inset-0 h-full w-full object-cover" /></div>
+        <div className="relative min-h-80 bg-cream-200"><img src={displayImagePath} alt={`${item.name} ${size.size_label}`} className="absolute inset-0 h-full w-full object-cover" /></div>
         <div className="p-6 sm:p-9">
           <p className="text-xs font-semibold uppercase tracking-widest text-sage">{item.category}</p>
           <h1 className="mt-2 font-display text-4xl text-cocoa">{item.name}</h1>

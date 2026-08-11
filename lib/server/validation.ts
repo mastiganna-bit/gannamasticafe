@@ -15,6 +15,14 @@ export const passwordSchema = z.string()
   .regex(/[A-Za-z]/, 'Password must contain a letter.')
   .regex(/\d/, 'Password must contain a number.')
 
+// PostgreSQL accepts the canonical hexadecimal UUID shape even when legacy
+// seeded identifiers do not carry RFC version/variant bits. Use this schema
+// for database-owned IDs that may come from the original menu seed.
+export const postgresUuidSchema = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  'Invalid database identifier',
+)
+
 export const uuidSchema = z.string().uuid()
 
 export const addressSchema = z.object({
@@ -30,4 +38,13 @@ export const addressSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   isDefault: z.boolean().default(false),
+})
+
+export const signupAddressSchema = addressSchema.extend({
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
+}).superRefine((address, ctx) => {
+  if ((address.latitude === null) !== (address.longitude === null)) {
+    ctx.addIssue({ code: 'custom', message: 'Latitude and longitude must be provided together.' })
+  }
 })

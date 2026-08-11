@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiErrorResponse, ApiError } from '@/lib/server/errors'
 import { verifyOtpChallenge } from '@/lib/server/otp'
-import { addressSchema, indianPhoneSchema, passwordSchema } from '@/lib/server/validation'
+import { signupAddressSchema, indianPhoneSchema, passwordSchema } from '@/lib/server/validation'
 
 const requestSchema = z.object({
   challengeId: z.string().uuid(),
@@ -11,7 +11,7 @@ const requestSchema = z.object({
   phone: indianPhoneSchema,
   password: passwordSchema,
   fullName: z.string().trim().min(2).max(80),
-  address: addressSchema,
+  address: signupAddressSchema,
 })
 
 export async function POST(request: Request) {

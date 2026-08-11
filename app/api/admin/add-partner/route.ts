@@ -29,12 +29,21 @@ export async function POST(req: Request) {
     const nationalPhone = input.phone.slice(3)
     const { data: profiles, error: lookupError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, role')
       .in('phone', [input.phone, nationalPhone])
       .limit(1)
     if (lookupError) throw lookupError
 
-    let userId = profiles?.[0]?.id as string | undefined
+    const existingProfile = profiles?.[0]
+    if (existingProfile && existingProfile.role !== 'driver') {
+      throw new ApiError(
+        409,
+        'This phone number already belongs to a customer or administrator account. Use a separate number for the delivery partner.',
+        'ACCOUNT_EXISTS',
+      )
+    }
+
+    let userId = existingProfile?.id as string | undefined
     if (!userId) {
       const { data, error } = await supabase.auth.admin.createUser({
         phone: input.phone,

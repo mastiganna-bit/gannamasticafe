@@ -88,7 +88,7 @@ async function processEvent(eventId: string, event: RazorpayEvent) {
           metadata: { paymentId: payment.id, eventId },
         })
         const refund = await createRazorpayRefund({ paymentId: payment.id, amountPaise: order.total_paise, idempotencyKey: `late-${eventId}`, reason: 'Payment captured after order closure' })
-        await admin.from('orders').update({ refund_id: refund.id, refund_status: refund.status === 'processed' ? 'refunded' : 'pending', reconciliation_required: refund.status !== 'processed' }).eq('id', order.id)
+        await admin.from('orders').update({ refund_id: refund.id, refund_status: refund.status === 'processed' ? 'processed' : 'pending', reconciliation_required: refund.status !== 'processed' }).eq('id', order.id)
       } else if (order.payment_status !== 'paid') {
         const { data: updated } = await admin.from('orders').update({
           razorpay_payment_id: payment.id,
@@ -118,7 +118,7 @@ async function processEvent(eventId: string, event: RazorpayEvent) {
     } else if (event.event === 'refund.processed') {
       const refund = event.payload?.refund?.entity
       if (refund?.payment_id) {
-        const { data: order } = await admin.from('orders').update({ refund_status: 'refunded', payment_status: 'refunded', refund_id: refund.id || null, reconciliation_required: false })
+        const { data: order } = await admin.from('orders').update({ refund_status: 'processed', payment_status: 'refunded', refund_id: refund.id || null, reconciliation_required: false })
           .eq('razorpay_payment_id', refund.payment_id).select('id,fulfillment_status').single()
         if (order?.fulfillment_status === 'cancellation_pending') {
           const { data: cancellation } = await admin.from('order_cancellations').select('*').eq('order_id', order.id).eq('status', 'processing').order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -128,7 +128,7 @@ async function processEvent(eventId: string, event: RazorpayEvent) {
             full_cancellation: cancellation.full_cancellation,
             cancelled_amount_paise: cancellation.amount_paise,
             item_changes: cancellation.item_changes,
-            refund_state: 'refunded', gateway_refund_id: refund.id || null,
+            refund_state: 'processed', gateway_refund_id: refund.id || null,
           })
         }
       }

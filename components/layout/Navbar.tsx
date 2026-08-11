@@ -86,6 +86,7 @@ export default function Navbar() {
                   src="/images/logo.png"
                   alt="Gannamasti Cafe"
                   fill
+                  sizes="64px"
                   className="object-contain"
                 />
               </div>
@@ -196,7 +197,7 @@ export default function Navbar() {
               <div className="flex items-center justify-between pb-4 border-b border-linen mb-6">
                 <Link href="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2.5">
                   <div className="w-14 h-14 relative shrink-0">
-                    <Image src="/images/logo.png" alt="Gannamasti Cafe" fill className="object-contain" />
+                    <Image src="/images/logo.png" alt="Gannamasti Cafe" fill sizes="56px" className="object-contain" />
                   </div>
                   <span className="font-serif text-2xl font-medium text-cocoa tracking-wide">Gannamasti Cafe</span>
                 </Link>

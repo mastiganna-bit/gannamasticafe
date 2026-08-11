@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Cormorant_Garamond, DM_Sans, DM_Serif_Display } from 'next/font/google'
+import 'leaflet/dist/leaflet.css'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
 

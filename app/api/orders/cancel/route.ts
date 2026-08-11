@@ -9,7 +9,10 @@ import { createOrderStatusNotification } from '@/lib/supabase/notifications'
 const requestSchema = z.object({
   orderId: z.string().uuid(),
   reason: z.string().trim().min(3).max(300),
-  items: z.array(z.object({ orderItemId: z.string().uuid(), quantity: z.number().int().min(1).max(25) })).max(40).optional(),
+  items: z.array(z.object({ orderItemId: z.string().uuid(), quantity: z.number().int().min(1).max(25) }))
+    .max(40)
+    .refine((items) => new Set(items.map((item) => item.orderItemId)).size === items.length, 'Each order item can only be included once.')
+    .optional(),
 })
 
 export async function POST(request: Request) {
@@ -26,11 +29,14 @@ export async function POST(request: Request) {
     if (!(isAdmin ? adminAllowed : customerAllowed).includes(order.fulfillment_status)) {
       throw new ApiError(409, 'This order can no longer be cancelled online. Please contact the cafe.', 'CANCELLATION_CLOSED')
     }
+    if (order.delivery_type === 'delivery' && order.delivery_status !== 'unassigned') {
+      throw new ApiError(409, 'This order is already assigned to a delivery partner and can no longer be rejected.', 'DELIVERY_ALREADY_ASSIGNED')
+    }
 
     const { data: orderItems } = await admin.from('order_items').select('*').eq('order_id', order.id)
     if (!orderItems?.length) throw new ApiError(409, 'Order item details are unavailable.', 'ORDER_ITEMS_MISSING')
     const requestedItems = input.items || []
-    const fullCancellation = requestedItems.length === 0
+    let fullCancellation = requestedItems.length === 0
     let amountPaise = order.total_paise
     const itemChanges = requestedItems.map((change) => {
       const item = orderItems.find((candidate) => candidate.id === change.orderItemId)
@@ -40,7 +46,14 @@ export async function POST(request: Request) {
       amountPaise = 0
       return { ...change, reason: input.reason, amountPaise: (item.unit_price_paise + item.addon_total_paise) * change.quantity }
     })
-    if (!fullCancellation) amountPaise = itemChanges.reduce((sum, item) => sum + item.amountPaise, 0)
+    if (!fullCancellation) {
+      const remainingQuantity = orderItems.reduce((sum, item) => sum + item.quantity - item.cancelled_quantity, 0)
+      const requestedQuantity = itemChanges.reduce((sum, item) => sum + item.quantity, 0)
+      fullCancellation = requestedQuantity === remainingQuantity
+      amountPaise = fullCancellation
+        ? order.total_paise
+        : itemChanges.reduce((sum, item) => sum + item.amountPaise, 0)
+    }
     if (amountPaise <= 0 || amountPaise > order.total_paise) throw new ApiError(400, 'Invalid cancellation amount.', 'INVALID_CANCELLATION_AMOUNT')
 
     const { data: cancellation, error: cancellationError } = await admin.from('order_cancellations').insert({
@@ -55,17 +68,24 @@ export async function POST(request: Request) {
     }).select('id').single()
     if (cancellationError || !cancellation) throw cancellationError || new Error('Cancellation could not be recorded.')
 
-    const { data: reserved } = await admin.from('orders').update({
+    const { data: reserved, error: reservationError } = await admin.from('orders').update({
       fulfillment_status: 'cancellation_pending',
       cancelled_by: session.user.id,
       cancel_reason: input.reason,
-      refund_status: order.payment_status === 'paid' ? 'processing' : 'none',
+      refund_status: order.payment_status === 'paid' ? 'pending' : 'not_required',
       updated_at: new Date().toISOString(),
     }).eq('id', order.id).eq('fulfillment_status', order.fulfillment_status).select('id').single()
-    if (!reserved) throw new ApiError(409, 'The order changed before cancellation.', 'ORDER_CONFLICT')
+    if (reservationError) {
+      await admin.from('order_cancellations').update({ status: 'failed', resolved_at: new Date().toISOString() }).eq('id', cancellation.id)
+      throw reservationError
+    }
+    if (!reserved) {
+      await admin.from('order_cancellations').update({ status: 'failed', resolved_at: new Date().toISOString() }).eq('id', cancellation.id)
+      throw new ApiError(409, 'The order changed before cancellation.', 'ORDER_CONFLICT')
+    }
 
     let refundId: string | null = null
-    let refundState = 'none'
+    let refundState = 'not_required'
     try {
       if (order.payment_method === 'online' && order.payment_status === 'paid') {
         if (!order.razorpay_payment_id) throw new ApiError(409, 'Payment reference is unavailable.', 'PAYMENT_REFERENCE_MISSING')
@@ -76,7 +96,7 @@ export async function POST(request: Request) {
           reason: input.reason,
         })
         refundId = refund.id
-        refundState = refund.status === 'processed' ? 'refunded' : 'pending'
+        refundState = refund.status === 'processed' ? 'processed' : 'pending'
       }
 
       const { error: finalizeError } = await admin.rpc('finalize_order_cancellation', {

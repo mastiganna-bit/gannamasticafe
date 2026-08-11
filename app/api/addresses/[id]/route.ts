@@ -10,6 +10,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { id } = await context.params
     const input = addressSchema.parse(await request.json())
     const admin = createAdminClient()
+    const { data: existing, error: existingError } = await admin.from('customer_addresses')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (!existing) throw new ApiError(404, 'Address not found.', 'ADDRESS_NOT_FOUND')
     if (input.isDefault) await admin.from('customer_addresses').update({ is_default: false }).eq('user_id', session.user.id)
     const { data, error } = await admin.from('customer_addresses').update({
       label: input.label,

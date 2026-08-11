@@ -10,8 +10,8 @@ export default function Footer() {
           {/* Brand */}
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className="w-18 h-18 relative shrink-0">
-                <Image src="/images/logo.png" alt="Gannamasti Cafe" fill className="object-contain brightness-200" />
+              <div className="relative h-[72px] w-[72px] shrink-0">
+                <Image src="/images/logo.png" alt="Gannamasti Cafe" fill sizes="72px" className="object-contain brightness-200" />
               </div>
               <span className="font-serif text-xl text-cream-100 tracking-wide">Gannamasti Cafe</span>
             </div>
