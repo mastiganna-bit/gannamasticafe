@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { Bike, CalendarDays, ChefHat, Clock3, History, LayoutDashboard, RefreshCw, Settings, ShoppingBag, Utensils } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { canAdminCancelOrder } from '@/lib/admin-order-actions'
 import { indiaDateKey, indiaDayLabel, matchesHistoryDate, type HistoryDateFilter } from '@/lib/admin-order-date'
 import MenuManager from './MenuManager'
 import StoreSettings from './StoreSettings'
@@ -56,7 +57,7 @@ export default function AdminDashboard() {
     {order.fulfillment_status==='preparing'?<button onClick={()=>act(order.id,'ready')} className="rounded-lg bg-sage px-3 py-2 text-xs font-bold text-white">Mark ready</button>:null}
     {order.fulfillment_status==='ready'&&order.delivery_type!=='delivery'?<button onClick={()=>act(order.id,'complete')} className="rounded-lg bg-sage px-3 py-2 text-xs font-bold text-white">Complete handover</button>:null}
     {order.fulfillment_status==='ready'&&order.delivery_type==='delivery'&&order.delivery_status==='unassigned'?<select aria-label="Assign delivery partner" defaultValue="" onChange={(e)=>assign(order.id,e.target.value)} className="rounded-lg border border-linen px-3 py-2 text-xs"><option value="" disabled>Assign active driver</option>{drivers.filter((d)=>d.is_active&&d.is_approved).map((d)=><option key={d.user_id} value={d.user_id}>{d.profile?.full_name||'Driver'} · {d.vehicle_number}</option>)}</select>:null}
-    {['awaiting_payment','awaiting_acceptance','accepted','preparing','ready'].includes(order.fulfillment_status)?<button onClick={()=>cancel(order.id)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Cancel / reject</button>:null}
+    {canAdminCancelOrder(order)?<button onClick={()=>cancel(order.id)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Cancel / reject</button>:null}
     <a href={`/api/orders/${order.id}/receipt`} className="rounded-lg border border-linen px-3 py-2 text-xs font-semibold">Receipt</a>
   </div>
 

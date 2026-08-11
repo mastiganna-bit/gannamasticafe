@@ -312,6 +312,23 @@ try {
   const updatedMenuItem = updatedMenu.items?.find((item) => item.id === temporaryMenuItemId)
   assert(updatedMenuItem?.name.endsWith('Updated') && updatedMenuItem.menu_item_sizes.length === 2, 'Admin menu update was not persisted')
   assert(updatedMenuItem.default_size_id === updatedMenuItem.menu_item_sizes.find((size) => size.size_label === 'Large')?.id, 'Admin menu default size was not persisted')
+  const legacyMenuItem = updatedMenu.items?.find((item) => item.id.startsWith('11111111-') && item.menu_item_sizes?.length)
+  assert(legacyMenuItem, 'No legacy seeded menu item was available for update validation')
+  const legacySizes = [...legacyMenuItem.menu_item_sizes].sort((a, b) => a.sort_order - b.sort_order)
+  const legacyMenuUpdate = previewRequest('/api/admin/menu', {
+    method: 'PATCH', headersFile: adminHeaders,
+    body: {
+      id: legacyMenuItem.id, name: legacyMenuItem.name, description: legacyMenuItem.description || '',
+      category: legacyMenuItem.category, imagePath: legacyMenuItem.image_path, isAvailable: legacyMenuItem.is_available,
+      allowExtraCheese: legacyMenuItem.allow_extra_cheese, noMayonnaise: legacyMenuItem.no_mayonnaise,
+      defaultSizeIndex: Math.max(0, legacySizes.findIndex((size) => size.id === legacyMenuItem.default_size_id)),
+      sizes: legacySizes.map((size) => ({
+        id: size.id, label: size.size_label, pricePaise: size.price_paise,
+        extraCheesePricePaise: size.extra_cheese_price_paise || 0, isAvailable: size.is_available,
+      })),
+    },
+  })
+  assert(legacyMenuUpdate.success === true, `Legacy seeded menu item could not be saved: ${JSON.stringify(legacyMenuUpdate)}`)
   const archivedMenu = previewRequest('/api/admin/menu', {
     method: 'DELETE', headersFile: adminHeaders, body: { id: temporaryMenuItemId },
   })
@@ -495,6 +512,22 @@ try {
   const replay = previewRequest('/api/create-order', { method: 'POST', headersFile: customerHeaders, body: orderRequest })
   assert(replay.idempotentReplay === true && replay.orderId === createdOrderId, 'Duplicate order submission was not idempotent')
 
+  phase = 'admin reject new order'
+  const adminRejectionOrder = previewRequest('/api/create-order', {
+    method: 'POST', headersFile: customerHeaders,
+    body: { ...orderRequest, clientOrderKey: randomUUID(), notes: 'Automated admin rejection test; delete after completion' },
+  })
+  assert(adminRejectionOrder.orderId, `Admin rejection order creation failed: ${JSON.stringify(adminRejectionOrder)}`)
+  auxiliaryOrderIds.push(adminRejectionOrder.orderId)
+  const adminRejection = previewRequest('/api/orders/cancel', {
+    method: 'POST', headersFile: adminHeaders,
+    body: { orderId: adminRejectionOrder.orderId, reason: 'Automated admin rejection' },
+  })
+  assert(adminRejection.success === true && adminRejection.fullCancellation === true, `Admin order rejection failed: ${JSON.stringify(adminRejection)}`)
+  const rejectedOrder = await admin.from('orders').select('fulfillment_status,total_paise').eq('id', adminRejectionOrder.orderId).single()
+  if (rejectedOrder.error) throw rejectedOrder.error
+  assert(rejectedOrder.data.fulfillment_status === 'cancelled' && rejectedOrder.data.total_paise === 0, 'Admin-rejected order retained an invalid state or balance')
+
   if (process.env.SKIP_CANCELLATION_SMOKE !== '1') {
   phase = 'create cancellation test order'
   const cancellationOrder = previewRequest('/api/create-order', {
@@ -571,6 +604,12 @@ try {
     method: 'POST', headersFile: adminHeaders, body: { orderId: createdOrderId, driverId: driver.id },
   })
   assert(assignment.success === true, `Driver assignment failed: ${JSON.stringify(assignment)}`)
+  phase = 'prevent rejection after driver assignment'
+  const assignedCancellation = previewRequest('/api/orders/cancel', {
+    method: 'POST', headersFile: adminHeaders,
+    body: { orderId: createdOrderId, reason: 'Must be blocked after assignment' },
+  })
+  assert(assignedCancellation.code === 'DELIVERY_ALREADY_ASSIGNED', `Assigned delivery was still cancellable: ${JSON.stringify(assignedCancellation)}`)
   phase = 'protect active driver assignment'
   const activeSuspension = previewRequest('/api/admin/drivers/status', {
     method: 'POST', headersFile: adminHeaders, body: { driverId: driver.id, approved: false },

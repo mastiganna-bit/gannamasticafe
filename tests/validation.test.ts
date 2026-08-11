@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addressSchema, indianPhoneSchema, passwordSchema, signupAddressSchema } from '@/lib/server/validation'
+import { addressSchema, indianPhoneSchema, passwordSchema, postgresUuidSchema, signupAddressSchema } from '@/lib/server/validation'
 import { quoteItemSchema } from '@/lib/server/quote'
 
 describe('customer input validation', () => {
@@ -34,5 +34,7 @@ describe('customer input validation', () => {
     }
     expect(quoteItemSchema.safeParse(item).success).toBe(true)
     expect(quoteItemSchema.safeParse({ ...item, size_id: 'not-an-id' }).success).toBe(false)
+    expect(postgresUuidSchema.safeParse(item.menu_item_id).success).toBe(true)
+    expect(postgresUuidSchema.safeParse('11111111-1111-1111-1111-11111111100z').success).toBe(false)
   })
 })

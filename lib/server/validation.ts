@@ -15,6 +15,14 @@ export const passwordSchema = z.string()
   .regex(/[A-Za-z]/, 'Password must contain a letter.')
   .regex(/\d/, 'Password must contain a number.')
 
+// PostgreSQL accepts the canonical hexadecimal UUID shape even when legacy
+// seeded identifiers do not carry RFC version/variant bits. Use this schema
+// for database-owned IDs that may come from the original menu seed.
+export const postgresUuidSchema = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  'Invalid database identifier',
+)
+
 export const uuidSchema = z.string().uuid()
 
 export const addressSchema = z.object({

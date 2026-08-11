@@ -29,6 +29,9 @@ export async function POST(request: Request) {
     if (!(isAdmin ? adminAllowed : customerAllowed).includes(order.fulfillment_status)) {
       throw new ApiError(409, 'This order can no longer be cancelled online. Please contact the cafe.', 'CANCELLATION_CLOSED')
     }
+    if (order.delivery_type === 'delivery' && order.delivery_status !== 'unassigned') {
+      throw new ApiError(409, 'This order is already assigned to a delivery partner and can no longer be rejected.', 'DELIVERY_ALREADY_ASSIGNED')
+    }
 
     const { data: orderItems } = await admin.from('order_items').select('*').eq('order_id', order.id)
     if (!orderItems?.length) throw new ApiError(409, 'Order item details are unavailable.', 'ORDER_ITEMS_MISSING')

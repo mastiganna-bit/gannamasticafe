@@ -2,18 +2,10 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ApiError } from './errors'
 import { getStoreSettings, storeAvailability } from './store'
+import { postgresUuidSchema } from './validation'
 
 export const deliveryTypeSchema = z.enum(['delivery', 'takeaway', 'dine_in'])
 export type DeliveryType = z.infer<typeof deliveryTypeSchema>
-
-// PostgreSQL's uuid type accepts the canonical 8-4-4-4-12 hexadecimal shape
-// without enforcing RFC version/variant bits. The legacy menu contains valid
-// PostgreSQL UUIDs generated in that form, so menu foreign keys must mirror the
-// database contract instead of Zod's stricter RFC-only uuid validator.
-const postgresUuidSchema = z.string().regex(
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-  'Invalid database identifier',
-)
 
 export const quoteItemSchema = z.object({
   menu_item_id: postgresUuidSchema,
