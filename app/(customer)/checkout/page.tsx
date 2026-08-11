@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Banknote, Check, ChevronLeft, Loader2, LocateFixed, MapPin, Plus, Store, UtensilsCrossed } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCart } from '@/components/cart/CartProvider'
+import LocationPickerMap from '@/components/location/LocationPickerMap'
 import { createClient } from '@/lib/supabase/client'
 import { formatPrice } from '@/lib/utils'
 import type { RazorpayOptions, RazorpayResponse } from '@/lib/types'
@@ -329,6 +330,7 @@ function AddressForm({ address, onSaved, onCancel }: { address: Address | null; 
     <input className={input} placeholder="PIN code" inputMode="numeric" value={form.postalCode} onChange={(e) => set('postalCode', e.target.value.replace(/\D/g, '').slice(0, 6))} />
     <button type="button" onClick={locate} className="flex items-center justify-center gap-2 rounded-xl border border-sage/30 bg-white px-3 py-2.5 text-sm font-semibold text-sage"><LocateFixed size={16} />{form.latitude === null ? 'Detect map location' : 'Location detected'}</button>
     <label className="flex items-center gap-2 text-sm text-cocoa"><input type="checkbox" checked={form.isDefault} onChange={(e) => set('isDefault', e.target.checked)} className="accent-sage" /> Make default</label>
+    <LocationPickerMap className="sm:col-span-2" latitude={form.latitude} longitude={form.longitude} onChange={(lat, lng) => setForm((current) => ({ ...current, latitude: lat, longitude: lng }))} />
     <div className="flex gap-3 sm:col-span-2"><button className="btn-primary flex-1" disabled={busy}>{busy ? 'Saving…' : address ? 'Update address' : 'Save address'}</button><button type="button" onClick={onCancel} className="rounded-xl border border-linen px-4 py-3 text-sm font-semibold text-cocoa">Cancel</button></div>
   </form>
 }

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2, LocateFixed, LockKeyhole, Phone, UserRound } from 'lucide-react'
 import toast from 'react-hot-toast'
+import LocationPickerMap from '@/components/location/LocationPickerMap'
 import { createClient } from '@/lib/supabase/client'
 
 type Mode = 'login' | 'signup' | 'forgot'
@@ -209,7 +210,8 @@ export default function LoginPage() {
               <button type="button" onClick={locate} className="flex w-full items-center justify-center gap-2 rounded-xl border border-sage/30 bg-sage/5 px-4 py-3 text-sm font-semibold text-sage" disabled={busy}>
                 <LocateFixed size={17} /> {latitude === null ? 'Detect delivery location' : 'Location detected — update'}
               </button>
-              <p className="text-xs leading-relaxed text-cocoa-muted">Location is optional while creating your account. Delivery availability is checked securely against the cafe’s service area at checkout; pickup remains available without GPS.</p>
+              <LocationPickerMap latitude={latitude} longitude={longitude} onChange={(lat, lng) => { setLatitude(lat); setLongitude(lng) }} />
+              <p className="text-xs leading-relaxed text-cocoa-muted">The selected pin is saved with your address and used for delivery availability and driver routing. Pickup remains available without GPS.</p>
             </>}
             <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy}>
               {busy && <Loader2 size={16} className="animate-spin" />} Send verification code
