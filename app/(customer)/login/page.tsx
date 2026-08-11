@@ -10,8 +10,22 @@ import { createClient } from '@/lib/supabase/client'
 
 type Mode = 'login' | 'signup' | 'forgot'
 type Step = 'details' | 'otp'
+type SignupDraft = {
+  savedAt: number
+  phone: string
+  fullName: string
+  house: string
+  area: string
+  landmark: string
+  city: string
+  postalCode: string
+  latitude: number | null
+  longitude: number | null
+}
 
 const normalizePhone = (value: string) => `+91${value.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').slice(-10)}`
+const SIGNUP_DRAFT_KEY = 'gannamasti-signup-draft-v1'
+const SIGNUP_DRAFT_TTL = 24 * 60 * 60 * 1000
 
 export default function LoginPage() {
   const router = useRouter()
@@ -32,10 +46,53 @@ export default function LoginPage() {
   const [postalCode, setPostalCode] = useState('')
   const [latitude, setLatitude] = useState<number | null>(null)
   const [longitude, setLongitude] = useState<number | null>(null)
+  const [draftReady, setDraftReady] = useState(false)
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('mode') === 'forgot') setMode('forgot')
+    if (new URLSearchParams(window.location.search).get('mode') === 'forgot') {
+      setMode('forgot')
+      setDraftReady(true)
+      return
+    }
+    try {
+      const stored = window.localStorage.getItem(SIGNUP_DRAFT_KEY)
+      if (!stored) return
+      const draft = JSON.parse(stored) as SignupDraft
+      if (!draft.savedAt || Date.now() - draft.savedAt > SIGNUP_DRAFT_TTL) {
+        window.localStorage.removeItem(SIGNUP_DRAFT_KEY)
+        return
+      }
+      setPhone(draft.phone || '')
+      setFullName(draft.fullName || '')
+      setHouse(draft.house || '')
+      setArea(draft.area || '')
+      setLandmark(draft.landmark || '')
+      setCity(draft.city || 'Rohtak')
+      setPostalCode(draft.postalCode || '')
+      setLatitude(Number.isFinite(draft.latitude) ? draft.latitude : null)
+      setLongitude(Number.isFinite(draft.longitude) ? draft.longitude : null)
+      setMode('signup')
+    } catch {
+      window.localStorage.removeItem(SIGNUP_DRAFT_KEY)
+    } finally {
+      setDraftReady(true)
+    }
   }, [])
+
+  useEffect(() => {
+    if (!draftReady || mode !== 'signup') return
+    const timer = window.setTimeout(() => {
+      try {
+        const draft: SignupDraft = {
+          savedAt: Date.now(), phone, fullName, house, area, landmark, city, postalCode, latitude, longitude,
+        }
+        window.localStorage.setItem(SIGNUP_DRAFT_KEY, JSON.stringify(draft))
+      } catch {
+        // Private browsing or device storage policies may disable local storage.
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [area, city, draftReady, fullName, house, landmark, latitude, longitude, mode, phone, postalCode])
 
   const redirectAfterLogin = async () => {
     const next = new URLSearchParams(window.location.search).get('next')
@@ -140,6 +197,7 @@ export default function LoginPage() {
       const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({ phone: normalizePhone(phone), password })
       if (error) throw new Error('Password saved. Please use it to log in.')
+      if (mode === 'signup') window.localStorage.removeItem(SIGNUP_DRAFT_KEY)
       toast.success(mode === 'signup' ? 'Account created successfully!' : 'Password reset successfully!')
       await redirectAfterLogin()
     } catch (error) {
@@ -212,6 +270,7 @@ export default function LoginPage() {
               </button>
               <LocationPickerMap latitude={latitude} longitude={longitude} onChange={(lat, lng) => { setLatitude(lat); setLongitude(lng) }} />
               <p className="text-xs leading-relaxed text-cocoa-muted">The selected pin is saved with your address and used for delivery availability and driver routing. Pickup remains available without GPS.</p>
+              <p className="rounded-xl bg-cream px-3 py-2 text-[11px] leading-relaxed text-cocoa-muted">Your name, mobile number, address and selected pin are saved on this device for 24 hours, so an accidental reload will not erase them. Passwords and verification codes are never stored.</p>
             </>}
             <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy}>
               {busy && <Loader2 size={16} className="animate-spin" />} Send verification code

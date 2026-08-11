@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Map as LeafletMap, Marker as LeafletMarker } from 'leaflet'
+import GoogleLocationPickerMap from './GoogleLocationPickerMap'
 
 const ROHTAK_CENTER: [number, number] = [28.8955, 76.6066]
 
@@ -12,7 +13,19 @@ type Props = {
   className?: string
 }
 
-export default function LocationPickerMap({ latitude, longitude, onChange, className = '' }: Props) {
+export default function LocationPickerMap(props: Props) {
+  const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim()
+  const googleMapId = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID?.trim() || 'DEMO_MAP_ID'
+  const [googleUnavailable, setGoogleUnavailable] = useState(false)
+  const handleGoogleUnavailable = useCallback(() => setGoogleUnavailable(true), [])
+
+  if (googleMapsKey && !googleUnavailable) {
+    return <GoogleLocationPickerMap {...props} apiKey={googleMapsKey} mapId={googleMapId} onUnavailable={handleGoogleUnavailable} />
+  }
+  return <OpenStreetLocationPickerMap {...props} />
+}
+
+function OpenStreetLocationPickerMap({ latitude, longitude, onChange, className = '' }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const markerRef = useRef<LeafletMarker | null>(null)
