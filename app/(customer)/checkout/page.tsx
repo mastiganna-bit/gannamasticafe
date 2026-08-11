@@ -24,8 +24,8 @@ type Address = {
   landmark: string | null
   city: string
   postal_code: string | null
-  latitude: number
-  longitude: number
+  latitude: number | null
+  longitude: number | null
   is_default: boolean
 }
 
@@ -60,6 +60,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false)
   const [settings, setSettings] = useState<StoreSettings | null>(null)
   const [showAddressForm, setShowAddressForm] = useState(false)
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null)
   const [clientOrderKey, setClientOrderKey] = useState(() => crypto.randomUUID())
 
   const selectedAddress = addresses.find((address) => address.id === addressId)
@@ -76,7 +77,7 @@ export default function CheckoutPage() {
     const result = await response.json()
     setAddresses(result.addresses || [])
     const preferred = result.addresses?.find((address: Address) => address.is_default) || result.addresses?.[0]
-    if (preferred) setAddressId((current) => current || preferred.id)
+    setAddressId((current) => result.addresses?.some((address: Address) => address.id === current) ? current : preferred?.id || '')
   }, [])
 
   useEffect(() => {
@@ -137,6 +138,23 @@ export default function CheckoutPage() {
     }, 250)
     return () => { window.clearTimeout(timer); controller.abort() }
   }, [requestItems, deliveryType, selectedAddress])
+
+  useEffect(() => {
+    if (settings && !settings.codEnabled && paymentMethod === 'cod') setPaymentMethod('online')
+  }, [settings, paymentMethod])
+
+  const deleteAddress = async (address: Address) => {
+    if (!window.confirm(`Delete ${address.label} address?`)) return
+    try {
+      const response = await fetch(`/api/addresses/${address.id}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Address could not be deleted.')
+      toast.success('Address deleted.')
+      await loadAddresses()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Address could not be deleted.')
+    }
+  }
 
   const placeOrder = async (event: FormEvent) => {
     event.preventDefault()
@@ -229,10 +247,10 @@ export default function CheckoutPage() {
           </section>
 
           {deliveryType === 'delivery' && <section className="rounded-2xl border border-linen bg-white p-5 shadow-card">
-            <div className="flex items-center justify-between"><h2 className="font-display text-2xl text-cocoa">Delivery address</h2><button type="button" onClick={() => setShowAddressForm(!showAddressForm)} className="flex items-center gap-1 text-sm font-semibold text-sage"><Plus size={15} /> Add address</button></div>
-            <div className="mt-4 grid gap-3">{addresses.map((address) => <button type="button" key={address.id} onClick={() => setAddressId(address.id)} className={`relative rounded-xl border p-4 text-left ${addressId === address.id ? 'border-sage bg-sage/5' : 'border-linen'}`}><p className="font-bold text-cocoa">{address.label} {address.is_default && <span className="ml-2 text-xs font-medium text-sage">Default</span>}</p><p className="mt-1 text-sm text-cocoa-muted">{[address.house, address.area, address.landmark, address.city, address.postal_code].filter(Boolean).join(', ')}</p>{addressId === address.id && <Check size={17} className="absolute right-3 top-3 text-sage" />}</button>)}</div>
+            <div className="flex items-center justify-between"><h2 className="font-display text-2xl text-cocoa">Delivery address</h2><button type="button" onClick={() => { setEditingAddress(null); setShowAddressForm(true) }} className="flex items-center gap-1 text-sm font-semibold text-sage"><Plus size={15} /> Add address</button></div>
+            <div className="mt-4 grid gap-3">{addresses.map((address) => <article key={address.id} className={`relative rounded-xl border p-4 ${addressId === address.id ? 'border-sage bg-sage/5' : 'border-linen'}`}><button type="button" onClick={() => setAddressId(address.id)} className="w-full pr-7 text-left"><p className="font-bold text-cocoa">{address.label} {address.is_default && <span className="ml-2 text-xs font-medium text-sage">Default</span>}</p><p className="mt-1 text-sm text-cocoa-muted">{[address.house, address.area, address.landmark, address.city, address.postal_code].filter(Boolean).join(', ')}</p>{address.latitude === null || address.longitude === null ? <p className="mt-2 text-xs font-semibold text-amber-700">Map location required before delivery</p> : null}{addressId === address.id && <Check size={17} className="absolute right-3 top-3 text-sage" />}</button><div className="mt-3 flex gap-3 border-t border-linen pt-3 text-xs font-semibold"><button type="button" className="text-sage-dark" onClick={() => { setEditingAddress(address); setShowAddressForm(true) }}>Edit</button><button type="button" className="text-red-700" onClick={() => deleteAddress(address)}>Delete</button></div></article>)}</div>
             {!addresses.length && <p className="mt-4 rounded-xl bg-cream-200 p-4 text-sm text-cocoa-muted">Add a saved address with a map location to check delivery availability.</p>}
-            {showAddressForm && <AddressForm onSaved={async () => { setShowAddressForm(false); await loadAddresses() }} />}
+            {showAddressForm && <AddressForm address={editingAddress} onCancel={() => { setShowAddressForm(false); setEditingAddress(null) }} onSaved={async () => { setShowAddressForm(false); setEditingAddress(null); await loadAddresses() }} />}
           </section>}
 
           {deliveryType === 'dine_in' && <section className="rounded-2xl border border-linen bg-white p-5 shadow-card"><label className="text-sm font-semibold text-cocoa">Table number<input value={tableNumber} onChange={(event) => setTableNumber(event.target.value.slice(0, 20))} className="mt-2 w-full rounded-xl border border-linen px-4 py-3 outline-none focus:border-sage" required /></label></section>}
@@ -277,8 +295,13 @@ function SummaryRow({ label, value, freeLabel }: { label: string; value: number;
 function LoadingPage({ label }: { label: string }) { return <div className="flex min-h-screen items-center justify-center bg-cream"><Loader2 className="mr-2 animate-spin text-sage" /> <span className="text-sm text-cocoa-muted">{label}</span></div> }
 function LockIcon() { return <span aria-hidden>🔒</span> }
 
-function AddressForm({ onSaved }: { onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ label: 'Home', recipientName: '', phone: '', house: '', area: '', landmark: '', city: 'Rohtak', postalCode: '', latitude: null as number | null, longitude: null as number | null, isDefault: false })
+function AddressForm({ address, onSaved, onCancel }: { address: Address | null; onSaved: () => Promise<void>; onCancel: () => void }) {
+  const [form, setForm] = useState({
+    label: address?.label || 'Home', recipientName: address?.recipient_name || '', phone: address?.phone.replace(/^\+91/, '') || '',
+    house: address?.house || '', area: address?.area || '', landmark: address?.landmark || '', city: address?.city || 'Rohtak',
+    postalCode: address?.postal_code || '', latitude: address?.latitude ?? null, longitude: address?.longitude ?? null,
+    isDefault: address?.is_default || false,
+  })
   const [busy, setBusy] = useState(false)
   const set = (key: keyof typeof form, value: string | number | boolean | null) => setForm((current) => ({ ...current, [key]: value }))
   const locate = () => navigator.geolocation?.getCurrentPosition(({ coords }) => { set('latitude', coords.latitude); set('longitude', coords.longitude); toast.success('Map location detected.') }, () => toast.error('Location permission was not granted.'), { enableHighAccuracy: true, timeout: 12_000 })
@@ -287,10 +310,10 @@ function AddressForm({ onSaved }: { onSaved: () => Promise<void> }) {
     if (form.latitude === null || form.longitude === null) return toast.error('Detect the map location first.')
     setBusy(true)
     try {
-      const response = await fetch('/api/addresses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const response = await fetch(address ? `/api/addresses/${address.id}` : '/api/addresses', { method: address ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Address could not be saved.')
-      toast.success('Address saved.')
+      toast.success(address ? 'Address updated.' : 'Address saved.')
       await onSaved()
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Address could not be saved.') } finally { setBusy(false) }
   }
@@ -306,6 +329,6 @@ function AddressForm({ onSaved }: { onSaved: () => Promise<void> }) {
     <input className={input} placeholder="PIN code" inputMode="numeric" value={form.postalCode} onChange={(e) => set('postalCode', e.target.value.replace(/\D/g, '').slice(0, 6))} />
     <button type="button" onClick={locate} className="flex items-center justify-center gap-2 rounded-xl border border-sage/30 bg-white px-3 py-2.5 text-sm font-semibold text-sage"><LocateFixed size={16} />{form.latitude === null ? 'Detect map location' : 'Location detected'}</button>
     <label className="flex items-center gap-2 text-sm text-cocoa"><input type="checkbox" checked={form.isDefault} onChange={(e) => set('isDefault', e.target.checked)} className="accent-sage" /> Make default</label>
-    <button className="btn-primary sm:col-span-2" disabled={busy}>{busy ? 'Saving…' : 'Save address'}</button>
+    <div className="flex gap-3 sm:col-span-2"><button className="btn-primary flex-1" disabled={busy}>{busy ? 'Saving…' : address ? 'Update address' : 'Save address'}</button><button type="button" onClick={onCancel} className="rounded-xl border border-linen px-4 py-3 text-sm font-semibold text-cocoa">Cancel</button></div>
   </form>
 }

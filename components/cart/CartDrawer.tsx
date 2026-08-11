@@ -71,12 +71,9 @@ export default function CartDrawer() {
                   <p className="font-sans text-sm text-cocoa-muted mb-6">
                     Add items from our menu to get started
                   </p>
-                  <button
-                    onClick={() => setIsCartOpen(false)}
-                    className="btn-primary text-sm"
-                  >
+                  <Link href="/menu" onClick={() => setIsCartOpen(false)} className="btn-primary text-sm">
                     Browse Menu
-                  </button>
+                  </Link>
                 </div>
               ) : (
                 items.map((item) => {
@@ -163,12 +160,13 @@ export default function CartDrawer() {
                 >
                   Proceed to Checkout
                 </Link>
-                <button
+                <Link
+                  href="/menu"
                   onClick={() => setIsCartOpen(false)}
                   className="w-full text-center font-sans text-sm text-sage hover:text-sage-dark font-medium transition-colors pt-1 block cursor-pointer"
                 >
                   ← Continue Shopping
-                </button>
+                </Link>
                 <p className="font-sans text-xs text-cocoa-muted text-center">
                   Secure payment via Razorpay
                 </p>

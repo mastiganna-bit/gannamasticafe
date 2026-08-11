@@ -92,7 +92,6 @@ export default function LoginPage() {
     if (phone.replace(/\D/g, '').length !== 10) return toast.error('Enter a valid 10-digit mobile number.')
     if (mode === 'signup') {
       if (password !== confirmPassword) return toast.error('Passwords do not match.')
-      if (latitude === null || longitude === null) return toast.error('Please detect your delivery location.')
     }
     setBusy(true)
     try {
@@ -210,7 +209,7 @@ export default function LoginPage() {
               <button type="button" onClick={locate} className="flex w-full items-center justify-center gap-2 rounded-xl border border-sage/30 bg-sage/5 px-4 py-3 text-sm font-semibold text-sage" disabled={busy}>
                 <LocateFixed size={17} /> {latitude === null ? 'Detect delivery location' : 'Location detected — update'}
               </button>
-              <p className="text-xs leading-relaxed text-cocoa-muted">Delivery availability is checked securely against the cafe’s 20 km service area at checkout. You can still use pickup if delivery is unavailable.</p>
+              <p className="text-xs leading-relaxed text-cocoa-muted">Location is optional while creating your account. Delivery availability is checked securely against the cafe’s service area at checkout; pickup remains available without GPS.</p>
             </>}
             <button className="btn-primary flex w-full items-center justify-center gap-2" disabled={busy}>
               {busy && <Loader2 size={16} className="animate-spin" />} Send verification code

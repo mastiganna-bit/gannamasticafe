@@ -5,6 +5,7 @@ import { CartItem } from '@/lib/types'
 import { getExtraCheesePrice } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import CartDrawer from './CartDrawer'
+import { MAX_CART_ITEM_QUANTITY, normalizeStoredCart } from '@/lib/cart'
 
 type CartContextType = {
   items: CartItem[]
@@ -31,7 +32,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const savedCart = localStorage.getItem('gannamasti_cart')
     if (savedCart) {
       try {
-        setItems(JSON.parse(savedCart))
+        setItems(normalizeStoredCart(JSON.parse(savedCart)))
       } catch (e) {
         console.error('Failed to load cart', e)
       }
@@ -60,11 +61,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (exists) {
         return prev.map((i) =>
           i.size_id === newItem.size_id && !!i.extra_cheese === !!newItem.extra_cheese
-            ? { ...i, quantity: i.quantity + 1 }
+            ? { ...i, quantity: Math.min(MAX_CART_ITEM_QUANTITY, i.quantity + newItem.quantity) }
             : i
         )
       }
-      return [...prev, newItem]
+      return [...prev, { ...newItem, quantity: Math.min(MAX_CART_ITEM_QUANTITY, Math.max(1, newItem.quantity)) }]
     })
   }, [items])
 
@@ -77,7 +78,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (quantity <= 0) {
         return prev.filter((i) => !(i.size_id === sizeId && !!i.extra_cheese === !!extraCheese))
       }
-      return prev.map((i) => (i.size_id === sizeId && !!i.extra_cheese === !!extraCheese ? { ...i, quantity } : i))
+      return prev.map((i) => (i.size_id === sizeId && !!i.extra_cheese === !!extraCheese ? { ...i, quantity: Math.min(MAX_CART_ITEM_QUANTITY, quantity) } : i))
     })
   }, [])
 

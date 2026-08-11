@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addressSchema, indianPhoneSchema, passwordSchema } from '@/lib/server/validation'
+import { addressSchema, indianPhoneSchema, passwordSchema, signupAddressSchema } from '@/lib/server/validation'
 import { quoteItemSchema } from '@/lib/server/quote'
 
 describe('customer input validation', () => {
@@ -18,6 +18,12 @@ describe('customer input validation', () => {
     const result = addressSchema.safeParse({ label:'Home',recipientName:'Amit',phone:'+919812682980',house:'12',area:'Model Town',city:'Rohtak',latitude:28.89,longitude:76.58 })
     expect(result.success).toBe(true)
     expect(addressSchema.safeParse({ label:'Home',recipientName:'Amit',phone:'+919812682980',house:'12',area:'Model Town',city:'Rohtak',latitude:128,longitude:76.58 }).success).toBe(false)
+  })
+
+  it('allows signup without GPS while requiring coordinate pairs', () => {
+    const base = { label:'Home',recipientName:'Amit',phone:'+919812682980',house:'12',area:'Model Town',city:'Rohtak' }
+    expect(signupAddressSchema.safeParse({ ...base, latitude:null, longitude:null }).success).toBe(true)
+    expect(signupAddressSchema.safeParse({ ...base, latitude:28.89, longitude:null }).success).toBe(false)
   })
 
   it('accepts legacy PostgreSQL UUID menu keys without weakening their shape', () => {

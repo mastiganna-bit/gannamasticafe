@@ -31,3 +31,12 @@ export const addressSchema = z.object({
   longitude: z.number().min(-180).max(180),
   isDefault: z.boolean().default(false),
 })
+
+export const signupAddressSchema = addressSchema.extend({
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
+}).superRefine((address, ctx) => {
+  if ((address.latitude === null) !== (address.longitude === null)) {
+    ctx.addIssue({ code: 'custom', message: 'Latitude and longitude must be provided together.' })
+  }
+})
